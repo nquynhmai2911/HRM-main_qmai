@@ -17,11 +17,15 @@ const ContractListPage = lazy(() => import('../features/contracts/pages/Contract
 const PositionListPage = lazy(() => import('../features/organization/pages/PositionListPage'));
 const BranchListPage = lazy(() => import('../features/organization/pages/BranchListPage'));
 const DepartmentListPage = lazy(() => import('../features/organization/pages/DepartmentListPage'));
+const AboutCompanyPage = lazy(() => import('../features/company/pages/AboutCompanyPage'));
+const PerformanceReviewPage = lazy(() => import('../features/performance/pages/PerformanceReviewPage'));
 const MyTimesheetPage = lazy(() => import('../features/attendance/pages/MyTimesheetPage'));
 const LeaveRequestPage = lazy(() => import('../features/attendance/pages/LeaveRequestPage'));
 const LeaveApprovalPage = lazy(() => import('../features/attendance/pages/LeaveApprovalPage'));
 const OvertimePage = lazy(() => import('../features/attendance/pages/OvertimePage'));
 const SettingsPage = lazy(() => import('../features/admin/pages/SettingsPage'));
+const UserListPage = lazy(() => import('../features/admin/pages/UserListPage'));
+const AuditLogPage = lazy(() => import('../features/admin/pages/AuditLogPage'));
 const MyPayslipsPage = lazy(() => import('../features/payroll/pages/MyPayslipsPage'));
 const PayrollPeriodsPage = lazy(() => import('../features/payroll/pages/PayrollPeriodsPage'));
 
@@ -74,6 +78,9 @@ const AppRouter: React.FC = () => {
           >
             <Route index element={<DashboardPage />} />
 
+            {/* Company Info */}
+            <Route path="/about-company" element={<AboutCompanyPage />} />
+
             {/* Organization */}
             <Route path="/organization/branches" element={<BranchListPage />} />
             <Route path="/organization/departments" element={<DepartmentListPage />} />
@@ -82,6 +89,7 @@ const AppRouter: React.FC = () => {
             {/* Employees */}
             <Route path="/employees" element={<EmployeeListPage />} />
             <Route path="/employees/:id" element={<EmployeeDetailPage />} />
+            <Route path="/employees/performance" element={<PerformanceReviewPage />} />
             
             {/* User Profile */}
             <Route path="/profile" element={<ProfilePage />} />
@@ -109,8 +117,8 @@ const AppRouter: React.FC = () => {
             <Route path="/payroll/my-payslips" element={<MyPayslipsPage />} />
 
             {/* Admin */}
-            <Route path="/admin/users" element={<div>Quản lý tài khoản (coming soon)</div>} />
-            <Route path="/admin/audit-logs" element={<div>Nhật ký hệ thống (coming soon)</div>} />
+            <Route path="/admin/users" element={<UserListPage />} />
+            <Route path="/admin/audit-logs" element={<AuditLogPage />} />
             <Route path="/admin/settings" element={<SettingsPage />} />
 
             {/* Profile */}

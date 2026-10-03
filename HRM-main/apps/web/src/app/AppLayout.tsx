@@ -12,6 +12,7 @@ import {
   LogoutOutlined,
   BellOutlined,
   AuditOutlined,
+  BankOutlined,
 } from '@ant-design/icons';
 import { ProLayout } from '@ant-design/pro-components';
 import { Dropdown, Badge, Space, Typography, message } from 'antd';
@@ -43,6 +44,11 @@ const rawMenuData: CustomMenuDataItem[] = [
     icon: <DashboardOutlined />,
   },
   {
+    path: '/about-company',
+    name: 'Giới thiệu công ty',
+    icon: <BankOutlined />,
+  },
+  {
     path: '/organization',
     name: 'Cơ cấu tổ chức',
     icon: <ApartmentOutlined />,
@@ -58,6 +64,10 @@ const rawMenuData: CustomMenuDataItem[] = [
     name: 'Nhân viên',
     icon: <TeamOutlined />,
     allowedRoles: ['ADMIN', 'CEO', 'HR_MANAGER', 'HR_STAFF', 'MANAGER'],
+    children: [
+      { path: '/employees', name: 'Danh sách nhân viên' },
+      { path: '/employees/performance', name: 'Đánh giá năng lực' },
+    ]
   },
   {
     path: '/recruitment/requisitions',

@@ -11,6 +11,7 @@ import {
   ExclamationCircleOutlined,
 } from '@ant-design/icons';
 import { useAuthStore } from '../../../lib/auth';
+import apiClient from '../../../lib/api';
 
 const { Title, Text } = Typography;
 
@@ -18,17 +19,22 @@ const DashboardPage: React.FC = () => {
   const user = useAuthStore((s) => s.user);
   const role = user?.role;
 
-  // Mock data – will be replaced with API calls
-  const stats = {
-    totalEmployees: 523,
-    newThisMonth: 12,
-    resignedThisMonth: 3,
-    openRequisitions: 8,
-    pendingLeaves: 15,
-    pendingOT: 7,
-    contractsExpiring: 4,
-    probationEnding: 2,
-  };
+  const [stats, setStats] = React.useState<any>({});
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const { data } = await apiClient.get('/dashboard/stats');
+        setStats(data);
+      } catch (error) {
+        console.error('Failed to fetch dashboard stats', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchStats();
+  }, []);
 
   return (
     <div style={{ padding: '0' }}>
@@ -60,8 +66,8 @@ const DashboardPage: React.FC = () => {
           <Row gutter={[16, 16]}>
             <Col xs={24} sm={12} lg={6}>
               <Card
-                style={{ borderRadius: 12, border: '1px solid #f0f0f0' }}
-                bodyStyle={{ padding: '20px' }}
+                style={{ borderRadius: 12, border: '1px solid #f0f0f0', height: '100%' }}
+                bodyStyle={{ padding: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '100%' }}
               >
                 <Statistic
                   title="Tổng nhân sự"
@@ -82,8 +88,8 @@ const DashboardPage: React.FC = () => {
 
             <Col xs={24} sm={12} lg={6}>
               <Card
-                style={{ borderRadius: 12, border: '1px solid #f0f0f0' }}
-                bodyStyle={{ padding: '20px' }}
+                style={{ borderRadius: 12, border: '1px solid #f0f0f0', height: '100%' }}
+                bodyStyle={{ padding: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '100%' }}
               >
                 <Statistic
                   title="Yêu cầu tuyển dụng"
@@ -92,13 +98,18 @@ const DashboardPage: React.FC = () => {
                   valueStyle={{ color: '#1a1a2e', fontWeight: 700 }}
                   suffix="đang mở"
                 />
+                <div style={{ marginTop: 8, visibility: 'hidden' }}>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    placeholder
+                  </Text>
+                </div>
               </Card>
             </Col>
 
             <Col xs={24} sm={12} lg={6}>
               <Card
-                style={{ borderRadius: 12, border: '1px solid #f0f0f0' }}
-                bodyStyle={{ padding: '20px' }}
+                style={{ borderRadius: 12, border: '1px solid #f0f0f0', height: '100%' }}
+                bodyStyle={{ padding: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '100%' }}
               >
                 <Statistic
                   title="Đơn chờ duyệt"
@@ -116,8 +127,8 @@ const DashboardPage: React.FC = () => {
 
             <Col xs={24} sm={12} lg={6}>
               <Card
-                style={{ borderRadius: 12, border: '1px solid #f0f0f0' }}
-                bodyStyle={{ padding: '20px' }}
+                style={{ borderRadius: 12, border: '1px solid #f0f0f0', height: '100%' }}
+                bodyStyle={{ padding: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '100%' }}
               >
                 <Statistic
                   title="Cảnh báo"
@@ -142,7 +153,7 @@ const DashboardPage: React.FC = () => {
               <Card style={{ borderRadius: 12 }} bodyStyle={{ padding: '20px' }}>
                 <Statistic
                   title="Ngày công tháng này"
-                  value={18}
+                  value={stats.workDaysThisMonth || 0}
                   suffix="/ 22"
                   prefix={<CheckCircleOutlined style={{ color: '#22c55e' }} />}
                   valueStyle={{ fontWeight: 700 }}
@@ -153,7 +164,7 @@ const DashboardPage: React.FC = () => {
               <Card style={{ borderRadius: 12 }} bodyStyle={{ padding: '20px' }}>
                 <Statistic
                   title="Số dư phép năm"
-                  value={8.5}
+                  value={stats.leaveBalance || 0}
                   suffix="ngày"
                   prefix={<ClockCircleOutlined style={{ color: '#3b82f6' }} />}
                   valueStyle={{ fontWeight: 700 }}
@@ -164,7 +175,7 @@ const DashboardPage: React.FC = () => {
               <Card style={{ borderRadius: 12 }} bodyStyle={{ padding: '20px' }}>
                 <Statistic
                   title="Đơn của tôi"
-                  value={2}
+                  value={stats.pendingRequests || 0}
                   suffix="chờ duyệt"
                   prefix={<FileTextOutlined style={{ color: '#f59e0b' }} />}
                   valueStyle={{ fontWeight: 700 }}
@@ -181,7 +192,7 @@ const DashboardPage: React.FC = () => {
               <Card style={{ borderRadius: 12 }} bodyStyle={{ padding: '20px' }}>
                 <Statistic
                   title="Nhân viên team"
-                  value={15}
+                  value={stats.teamMembers || 0}
                   prefix={<TeamOutlined style={{ color: '#3b82f6' }} />}
                   valueStyle={{ fontWeight: 700 }}
                 />
@@ -191,7 +202,7 @@ const DashboardPage: React.FC = () => {
               <Card style={{ borderRadius: 12 }} bodyStyle={{ padding: '20px' }}>
                 <Statistic
                   title="Đơn chờ duyệt"
-                  value={5}
+                  value={stats.pendingApprovals || 0}
                   prefix={<ClockCircleOutlined style={{ color: '#f59e0b' }} />}
                   valueStyle={{ fontWeight: 700 }}
                 />
@@ -201,8 +212,8 @@ const DashboardPage: React.FC = () => {
               <Card style={{ borderRadius: 12 }} bodyStyle={{ padding: '20px' }}>
                 <Statistic
                   title="Chuyên cần hôm nay"
-                  value={13}
-                  suffix="/ 15"
+                  value={stats.todayAttendance || 0}
+                  suffix={`/ ${stats.teamMembers || 0}`}
                   prefix={<CheckCircleOutlined style={{ color: '#22c55e' }} />}
                   valueStyle={{ fontWeight: 700 }}
                 />
@@ -212,7 +223,7 @@ const DashboardPage: React.FC = () => {
               <Card style={{ borderRadius: 12 }} bodyStyle={{ padding: '20px' }}>
                 <Statistic
                   title="Thử việc sắp hết"
-                  value={1}
+                  value={stats.probationEnding || 0}
                   prefix={<ExclamationCircleOutlined style={{ color: '#ef4444' }} />}
                   valueStyle={{ fontWeight: 700 }}
                 />
