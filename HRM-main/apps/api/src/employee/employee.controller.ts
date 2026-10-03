@@ -22,25 +22,25 @@ export class EmployeeController {
   }
 
   @Post()
-  @Auth()
+  @Auth('ADMIN', 'HR_MANAGER', 'HR_STAFF')
   create(@Body() data: any) {
     return this.employeeService.create(data);
   }
 
   @Put(':id')
-  @Auth()
+  @Auth('ADMIN', 'HR_MANAGER', 'HR_STAFF')
   update(@Param('id') id: string, @Body() data: any) {
     return this.employeeService.update(id, data);
   }
 
   @Delete(':id')
-  @Auth()
+  @Auth('ADMIN', 'HR_MANAGER')
   remove(@Param('id') id: string) {
     return this.employeeService.remove(id);
   }
 
   @Post(':id/salary')
-  @Auth()
+  @Auth('ADMIN', 'HR_MANAGER', 'ACCOUNTANT')
   addSalaryProfile(@Param('id') id: string, @Body() data: any) {
     return this.employeeService.addSalaryProfile(id, data);
   }

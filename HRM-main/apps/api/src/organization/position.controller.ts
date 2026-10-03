@@ -14,19 +14,19 @@ export class PositionController {
   findAll() { return this.positionService.findAll(); }
 
   @Post()
-  @Auth()
+  @Auth('ADMIN', 'HR_MANAGER', 'HR_STAFF')
   create(@Body() data: any) {
     return this.positionService.create(data);
   }
 
   @Put(':id')
-  @Auth()
+  @Auth('ADMIN', 'HR_MANAGER', 'HR_STAFF')
   update(@Param('id') id: string, @Body() data: any) {
     return this.positionService.update(id, data);
   }
 
   @Delete(':id')
-  @Auth()
+  @Auth('ADMIN', 'HR_MANAGER')
   remove(@Param('id') id: string) {
     return this.positionService.remove(id);
   }

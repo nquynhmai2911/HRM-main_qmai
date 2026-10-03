@@ -86,7 +86,9 @@ const DepartmentListPage: React.FC = () => {
   const columns = [
     { title: 'Mã PB', dataIndex: 'code', key: 'code', render: (t: string) => <strong>{t}</strong> },
     { title: 'Tên phòng ban', dataIndex: 'name', key: 'name' },
+    { title: 'Phòng ban cha', key: 'parent', render: (record: any) => record.parent?.name || '-' },
     { title: 'Trực thuộc chi nhánh', key: 'branch', render: (record: any) => record.branch?.name || 'N/A' },
+    { title: 'Số lượng nhân sự', key: 'employeeCount', render: (record: any) => record._count?.employees || 0 },
     {
       title: 'Hành động',
       key: 'action',
