@@ -12,6 +12,10 @@ import { ContractModule } from './contract/contract.module';
 import { AttendanceModule } from './attendance/attendance.module';
 import { AdminModule } from './admin/admin.module';
 import { PayrollModule } from './payroll/payroll.module';
+import { DashboardModule } from './dashboard/dashboard.module';
+import { APP_INTERCEPTOR } from '@nestjs/core';
+import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor';
+import { PerformanceModule } from './performance/performance.module';
 
 @Module({
   imports: [
@@ -28,8 +32,16 @@ import { PayrollModule } from './payroll/payroll.module';
     AttendanceModule,
     AdminModule,
     PayrollModule,
+    DashboardModule,
+    PerformanceModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: AuditLogInterceptor,
+    },
+  ],
 })
 export class AppModule {}
