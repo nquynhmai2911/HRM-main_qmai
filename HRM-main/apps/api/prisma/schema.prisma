@@ -249,6 +249,8 @@ model Employee {
   probationReviews  ProbationReview[]    @relation("ProbationEmployee")
   probationReviewsBy ProbationReview[]   @relation("ProbationReviewer")
   probationApprovalsBy ProbationReview[] @relation("ProbationApprover")
+  performanceReviews PerformanceReview[] @relation("PerformanceEmployee")
+  performanceReviewsBy PerformanceReview[] @relation("PerformanceReviewer")
   attendanceLogs    AttendanceLog[]
   leaveBalances     LeaveBalance[]
   leaveRequests     LeaveRequest[]
@@ -521,6 +523,28 @@ model ProbationReview {
 
   @@index([employeeId])
   @@map("probation_reviews")
+}
+
+model PerformanceReview {
+  id             String          @id @default(uuid())
+  employeeId     String
+  employee       Employee        @relation("PerformanceEmployee", fields: [employeeId], references: [id])
+  reviewerId     String
+  reviewer       Employee        @relation("PerformanceReviewer", fields: [reviewerId], references: [id])
+  period         String          // e.g. "Q1-2026", "H1-2026", "2026"
+  kpiScore       Float?          // 1-100
+  skillsScore    Float?          // 1-100
+  attitudeScore  Float?          // 1-100
+  totalScore     Float?
+  result         String?         // EXCELLENT, GOOD, AVERAGE, POOR
+  comment        String?
+  status         String          @default("DRAFT") // DRAFT, SUBMITTED, APPROVED
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([employeeId])
+  @@index([period])
+  @@map("performance_reviews")
 }
 
 // ──────────────────────────────────────────────
