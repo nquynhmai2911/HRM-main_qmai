@@ -1,0 +1,720 @@
+// ============================================================
+// DTS-HRM – Prisma Schema
+// Modules: Auth, Org, Employee, Recruitment, Contract,
+//          Attendance/Leave/OT, Payroll, Dashboard
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ──────────────────────────────────────────────
+// ENUMS
+// ──────────────────────────────────────────────
+
+// ──────────────────────────────────────────────
+// M0: AUTH & ACCOUNT MANAGEMENT
+// ──────────────────────────────────────────────
+
+model User {
+  id                 String    @id @default(uuid())
+  email              String    @unique
+  passwordHash       String
+  role               String    @default("EMPLOYEE")
+  isActive           Boolean   @default(true)
+  mustChangePassword Boolean   @default(true)
+  failedLoginCount   Int       @default(0)
+  lockedUntil        DateTime?
+  lastLoginAt        DateTime?
+  refreshToken       String?
+
+  employeeId String?   @unique
+  employee   Employee? @relation(fields: [employeeId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+
+  // Relations
+  auditLogs               AuditLog[]
+  interviewsAsInterviewer Interview[] @relation("Interviewer")
+  scorecards              Scorecard[]
+
+  @@map("users")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id])
+  action     String // login, create, update, delete, view, approve, reject
+  resource   String // employee, payroll, contract, etc.
+  resourceId String?
+  oldValue   String?
+  newValue   String?
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([resource, resourceId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ──────────────────────────────────────────────
+// M0: RBAC – Permission
+// ──────────────────────────────────────────────
+
+model Permission {
+  id       String @id @default(uuid())
+  resource String // e.g. "employee", "payroll", "requisition"
+  action   String // e.g. "create", "read", "update", "delete", "approve"
+  scope    String @default("all") // "own", "team", "all"
+
+  roles RolePermission[]
+
+  @@unique([resource, action, scope])
+  @@map("permissions")
+}
+
+model RolePermission {
+  id           String     @id @default(uuid())
+  role         String
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([role, permissionId])
+  @@map("role_permissions")
+}
+
+// ──────────────────────────────────────────────
+// M1: ORGANIZATION
+// ──────────────────────────────────────────────
+
+model Branch {
+  id        String   @id @default(uuid())
+  name      String
+  code      String   @unique
+  address   String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  departments Department[]
+  employees   Employee[]
+
+  @@map("branches")
+}
+
+model Department {
+  id        String       @id @default(uuid())
+  name      String
+  code      String       @unique
+  parentId  String?
+  parent    Department?  @relation("DepartmentTree", fields: [parentId], references: [id])
+  children  Department[] @relation("DepartmentTree")
+  branchId  String
+  branch    Branch       @relation(fields: [branchId], references: [id])
+  managerId String?
+  manager   Employee?    @relation("DepartmentManager", fields: [managerId], references: [id])
+  isActive  Boolean      @default(true)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  employees    Employee[]       @relation("EmployeeDepartment")
+  positions    Position[]       @relation("PositionDepartments")
+  requisitions JobRequisition[]
+
+  @@map("departments")
+}
+
+model Position {
+  id         String   @id @default(uuid())
+  name       String
+  code       String   @unique
+  levelGroup String? // Dev, QA, PM, Sales, Office
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  departments  Department[]     @relation("PositionDepartments")
+  employees    Employee[]
+  requisitions JobRequisition[]
+
+  @@map("positions")
+}
+
+// ──────────────────────────────────────────────
+// M2: EMPLOYEE
+// ──────────────────────────────────────────────
+
+model Employee {
+  id            String   @id @default(uuid())
+  employeeCode  String   @unique // Auto-gen: DTS0001
+  fullName      String
+  dob           DateTime
+  gender        String
+  idNumber      String   @unique // CCCD – sensitive
+  phone         String
+  personalEmail String?
+  workEmail     String   @unique
+  address       String?
+
+  departmentId String
+  department   Department @relation("EmployeeDepartment", fields: [departmentId], references: [id])
+  positionId   String
+  position     Position   @relation(fields: [positionId], references: [id])
+  branchId     String
+  branch       Branch     @relation(fields: [branchId], references: [id])
+  managerId    String?
+  manager      Employee?  @relation("EmployeeManager", fields: [managerId], references: [id])
+  subordinates Employee[] @relation("EmployeeManager")
+
+  level          String    @default("FRESHER")
+  educationLevel String    @default("UNIVERSITY")
+  workMode       String    @default("ONSITE")
+  joinDate       DateTime?
+  status         String    @default("ONBOARDING")
+
+  // Sensitive fields
+  bankName          String?
+  bankAccount       String?
+  taxCode           String?
+  socialInsuranceNo String?
+
+  emergencyContact String?
+  avatarUrl        String?
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+
+  // Relations
+  user                  User?
+  managedDepartments    Department[]       @relation("DepartmentManager")
+  documents             EmployeeDocument[]
+  dependents            Dependent[]
+  history               EmployeeHistory[]
+  contracts             Contract[]
+  probationReviews      ProbationReview[]  @relation("ProbationEmployee")
+  probationReviewsBy    ProbationReview[]  @relation("ProbationReviewer")
+  probationApprovalsBy  ProbationReview[]  @relation("ProbationApprover")
+  attendanceLogs        AttendanceLog[]
+  leaveBalances         LeaveBalance[]
+  leaveRequests         LeaveRequest[]
+  leaveApprovals        LeaveRequest[]     @relation("LeaveApprover")
+  overtimeRequests      OvertimeRequest[]
+  overtimeApprovals     OvertimeRequest[]  @relation("OTApprover")
+  payslips              Payslip[]
+  salaryProfiles        SalaryProfile[]
+  requestedRequisitions JobRequisition[]   @relation("RequisitionRequester")
+  referredCandidates    Candidate[]        @relation("CandidateReferrer")
+  managedProjects       Project[]          @relation("ProjectManager")
+
+  @@index([departmentId])
+  @@index([branchId])
+  @@index([status])
+  @@map("employees")
+}
+
+model EmployeeDocument {
+  id         String    @id @default(uuid())
+  employeeId String
+  employee   Employee  @relation(fields: [employeeId], references: [id])
+  type       String
+  fileUrl    String
+  fileName   String?
+  issueDate  DateTime?
+  verified   Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([employeeId])
+  @@map("employee_documents")
+}
+
+model Dependent {
+  id             String    @id @default(uuid())
+  employeeId     String
+  employee       Employee  @relation(fields: [employeeId], references: [id])
+  fullName       String
+  relation       String // con, vợ/chồng, cha, mẹ
+  dob            DateTime?
+  idNumber       String?
+  registeredFrom DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([employeeId])
+  @@map("dependents")
+}
+
+model EmployeeHistory {
+  id            String   @id @default(uuid())
+  employeeId    String
+  employee      Employee @relation(fields: [employeeId], references: [id])
+  field         String // department, position, level, salary, status
+  oldValue      String?
+  newValue      String?
+  effectiveDate DateTime
+  changedBy     String // userId
+  createdAt     DateTime @default(now())
+
+  @@index([employeeId])
+  @@map("employee_history")
+}
+
+// ──────────────────────────────────────────────
+// M3: RECRUITMENT
+// ──────────────────────────────────────────────
+
+model JobRequisition {
+  id                 String     @id @default(uuid())
+  code               String     @unique // Auto-gen: REQ-2026-001
+  title              String
+  departmentId       String
+  department         Department @relation(fields: [departmentId], references: [id])
+  positionId         String
+  position           Position   @relation(fields: [positionId], references: [id])
+  level              String?
+  quantity           Int        @default(1)
+  filledCount        Int        @default(0)
+  reason             String     @default("NEW_PROJECT")
+  salaryMin          Float?
+  salaryMax          Float?
+  requiredSkills     String? // comma-separated or JSON
+  minExperienceYears Int?
+  description        String?
+  status             String     @default("DRAFT")
+  requestedById      String
+  requestedBy        Employee   @relation("RequisitionRequester", fields: [requestedById], references: [id])
+  rejectReason       String?
+  targetDate         DateTime?
+  approvedAt         DateTime?
+  closedAt           DateTime?
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  applications Application[]
+  costs        RecruitmentCost[]
+
+  @@index([status])
+  @@map("job_requisitions")
+}
+
+model Candidate {
+  id                 String    @id @default(uuid())
+  fullName           String
+  email              String
+  phone              String?
+  cvUrl              String?
+  skills             String? // comma-separated tags
+  yearsExperience    Int?
+  source             String    @default("OTHER")
+  referrerEmployeeId String?
+  referrer           Employee? @relation("CandidateReferrer", fields: [referrerEmployeeId], references: [id])
+  note               String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  applications Application[]
+
+  @@index([email])
+  @@map("candidates")
+}
+
+model Application {
+  id             String         @id @default(uuid())
+  candidateId    String
+  candidate      Candidate      @relation(fields: [candidateId], references: [id])
+  requisitionId  String
+  requisition    JobRequisition @relation(fields: [requisitionId], references: [id])
+  stage          String         @default("NEW")
+  result         String?
+  rejectReasonId String?
+  rejectReason   RejectReason?  @relation(fields: [rejectReasonId], references: [id])
+  appliedAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  interviews             Interview[]
+  offer                  Offer?
+  testScore              Float?
+  testLink               String? // HackerRank link
+  referenceCheck         String? // Kết quả reference check
+  referenceCheckRequired Boolean     @default(false)
+
+  @@unique([candidateId, requisitionId])
+  @@index([requisitionId])
+  @@index([stage])
+  @@map("applications")
+}
+
+model RejectReason {
+  id           String        @id @default(uuid())
+  name         String        @unique
+  isActive     Boolean       @default(true)
+  applications Application[]
+
+  @@map("reject_reasons")
+}
+
+model Interview {
+  id            String      @id @default(uuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id])
+  round         Int // 1 or 2
+  scheduledAt   DateTime
+  meetingLink   String?
+  interviewerId String
+  interviewer   User        @relation("Interviewer", fields: [interviewerId], references: [id])
+  status        String      @default("SCHEDULED")
+  totalScore    Float?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  scorecards Scorecard[]
+
+  @@index([applicationId])
+  @@map("interviews")
+}
+
+model Scorecard {
+  id                 String    @id @default(uuid())
+  interviewId        String
+  interview          Interview @relation(fields: [interviewId], references: [id])
+  interviewerId      String
+  interviewer        User      @relation(fields: [interviewerId], references: [id])
+  technicalScore     Int? // 1-5
+  communicationScore Int? // 1-5
+  cultureScore       Int? // 1-5
+  englishScore       Int? // 1-5
+  recommendation     String    @default("HOLD")
+  comment            String?
+  createdAt          DateTime  @default(now())
+
+  @@unique([interviewId, interviewerId])
+  @@map("scorecards")
+}
+
+model Offer {
+  id            String      @id @default(uuid())
+  applicationId String      @unique
+  application   Application @relation(fields: [applicationId], references: [id])
+  salary        Float
+  startDate     DateTime
+  status        String      @default("DRAFT")
+  sentAt        DateTime?
+  respondedAt   DateTime?
+  note          String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@map("offers")
+}
+
+model RecruitmentCost {
+  id            String         @id @default(uuid())
+  requisitionId String
+  requisition   JobRequisition @relation(fields: [requisitionId], references: [id])
+  description   String
+  amount        Float
+  createdAt     DateTime       @default(now())
+
+  @@map("recruitment_costs")
+}
+
+// ──────────────────────────────────────────────
+// M4: CONTRACT & PROBATION
+// ──────────────────────────────────────────────
+
+model Contract {
+  id                     String    @id @default(uuid())
+  employeeId             String
+  employee               Employee  @relation(fields: [employeeId], references: [id])
+  type                   String
+  startDate              DateTime
+  endDate                DateTime?
+  baseSalary             Float
+  probationSalaryPercent Int?      @default(85) // 85% or 100%
+  fileUrl                String?
+  status                 String    @default("ACTIVE")
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  createdBy              String?
+
+  probationReview ProbationReview?
+
+  @@index([employeeId])
+  @@index([status])
+  @@map("contracts")
+}
+
+model ProbationReview {
+  id             String    @id @default(uuid())
+  employeeId     String
+  employee       Employee  @relation("ProbationEmployee", fields: [employeeId], references: [id])
+  contractId     String    @unique
+  contract       Contract  @relation(fields: [contractId], references: [id])
+  technicalScore Int? // 1-10
+  attitudeScore  Int? // 1-10
+  result         String?
+  comment        String?
+  reviewerId     String
+  reviewer       Employee  @relation("ProbationReviewer", fields: [reviewerId], references: [id])
+  approvedById   String?
+  approvedBy     Employee? @relation("ProbationApprover", fields: [approvedById], references: [id])
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([employeeId])
+  @@map("probation_reviews")
+}
+
+// ──────────────────────────────────────────────
+// M5: ATTENDANCE, LEAVE, OVERTIME
+// ──────────────────────────────────────────────
+
+model AttendanceLog {
+  id                String    @id @default(uuid())
+  employeeId        String
+  employee          Employee  @relation(fields: [employeeId], references: [id])
+  date              DateTime
+  checkInAt         DateTime?
+  checkOutAt        DateTime?
+  workMode          String    @default("ONSITE")
+  ip                String?
+  lat               Float?
+  lng               Float?
+  workedHours       Float?
+  lateMinutes       Int?      @default(0)
+  earlyLeaveMinutes Int?      @default(0)
+  isManualEntry     Boolean   @default(false) // Đơn bổ sung công
+  note              String?
+  status            String    @default("APPROVED") // Manual entries need approval
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@unique([employeeId, date])
+  @@index([employeeId])
+  @@index([date])
+  @@map("attendance_logs")
+}
+
+model LeaveType {
+  id                 String   @id @default(uuid())
+  name               String   @unique // Phép năm, Nghỉ ốm, Không lương, Thai sản, Việc riêng có lương
+  isPaid             Boolean  @default(true)
+  defaultDaysPerYear Float?
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  balances LeaveBalance[]
+  requests LeaveRequest[]
+
+  @@map("leave_types")
+}
+
+model LeaveBalance {
+  id          String    @id @default(uuid())
+  employeeId  String
+  employee    Employee  @relation(fields: [employeeId], references: [id])
+  leaveTypeId String
+  leaveType   LeaveType @relation(fields: [leaveTypeId], references: [id])
+  year        Int
+  total       Float
+  used        Float     @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([employeeId, leaveTypeId, year])
+  @@map("leave_balances")
+}
+
+model LeaveRequest {
+  id          String    @id @default(uuid())
+  employeeId  String
+  employee    Employee  @relation(fields: [employeeId], references: [id])
+  leaveTypeId String
+  leaveType   LeaveType @relation(fields: [leaveTypeId], references: [id])
+  fromDate    DateTime
+  toDate      DateTime
+  days        Float
+  reason      String?
+  status      String    @default("PENDING")
+  approverId  String?
+  approver    Employee? @relation("LeaveApprover", fields: [approverId], references: [id])
+  approvedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([employeeId])
+  @@index([status])
+  @@map("leave_requests")
+}
+
+model OvertimeRequest {
+  id         String    @id @default(uuid())
+  employeeId String
+  employee   Employee  @relation(fields: [employeeId], references: [id])
+  date       DateTime
+  startTime  DateTime
+  endTime    DateTime
+  hours      Float
+  dayType    String    @default("NORMAL")
+  projectId  String?
+  project    Project?  @relation(fields: [projectId], references: [id])
+  reason     String?
+  status     String    @default("PENDING")
+  approverId String?
+  approver   Employee? @relation("OTApprover", fields: [approverId], references: [id])
+  approvedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([employeeId])
+  @@index([status])
+  @@map("overtime_requests")
+}
+
+model Project {
+  id        String    @id @default(uuid())
+  name      String
+  code      String    @unique
+  managerId String?
+  manager   Employee? @relation("ProjectManager", fields: [managerId], references: [id])
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  overtimeRequests OvertimeRequest[]
+
+  @@map("projects")
+}
+
+model Holiday {
+  id   String   @id @default(uuid())
+  date DateTime
+  name String
+  year Int
+
+  @@unique([date])
+  @@index([year])
+  @@map("holidays")
+}
+
+model AttendanceClosing {
+  id       String   @id @default(uuid())
+  month    Int
+  year     Int
+  closedBy String
+  closedAt DateTime @default(now())
+
+  @@unique([month, year])
+  @@map("attendance_closings")
+}
+
+// ──────────────────────────────────────────────
+// M6: PAYROLL
+// ──────────────────────────────────────────────
+
+model SalaryProfile {
+  id            String   @id @default(uuid())
+  employeeId    String
+  employee      Employee @relation(fields: [employeeId], references: [id])
+  baseSalary    Float
+  allowances    String? // { "lunch": 700000, "transport": 500000, "phone": 200000 }
+  effectiveFrom DateTime
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([employeeId])
+  @@map("salary_profiles")
+}
+
+model PayrollPeriod {
+  id         String    @id @default(uuid())
+  month      Int
+  year       Int
+  status     String    @default("DRAFT")
+  version    Int       @default(1)
+  note       String?
+  createdBy  String?
+  approvedBy String?
+  approvedAt DateTime?
+  paidAt     DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  payslips Payslip[]
+
+  @@unique([month, year, version])
+  @@map("payroll_periods")
+}
+
+model Payslip {
+  id                String        @id @default(uuid())
+  periodId          String
+  period            PayrollPeriod @relation(fields: [periodId], references: [id])
+  employeeId        String
+  employee          Employee      @relation(fields: [employeeId], references: [id])
+  workDays          Float
+  standardWorkDays  Float         @default(22)
+  baseIncome        Float
+  allowanceTotal    Float         @default(0)
+  otAmount          Float         @default(0)
+  bonus             Float         @default(0)
+  grossIncome       Float         @default(0)
+  insuranceEmployee Float         @default(0) // BHXH+BHYT+BHTN phần NV
+  insuranceCompany  Float         @default(0) // Phần công ty
+  personalIncomeTax Float         @default(0)
+  otherDeduction    Float         @default(0)
+  netPay            Float         @default(0)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  items PayslipItem[]
+
+  @@unique([periodId, employeeId])
+  @@index([periodId])
+  @@index([employeeId])
+  @@map("payslips")
+}
+
+model PayslipItem {
+  id        String   @id @default(uuid())
+  payslipId String
+  payslip   Payslip  @relation(fields: [payslipId], references: [id], onDelete: Cascade)
+  type      String
+  name      String
+  amount    Float
+  createdAt DateTime @default(now())
+
+  @@index([payslipId])
+  @@map("payslip_items")
+}
+
+// ──────────────────────────────────────────────
+// SYSTEM CONFIG
+// ──────────────────────────────────────────────
+
+model SystemConfig {
+  id            String   @id @default(uuid())
+  key           String
+  value         String
+  description   String?
+  effectiveFrom DateTime
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([key, effectiveFrom])
+  @@index([key])
+  @@map("system_configs")
+}
