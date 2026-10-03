@@ -55,9 +55,32 @@ export class PayrollService {
     const period = await this.prisma.payrollPeriod.findUnique({ where: { id: periodId } });
     if (!period) throw new Error('Period not found');
 
-    const employees = await this.prisma.employee.findMany({ where: { status: 'ACTIVE' } });
+    const employees = await this.prisma.employee.findMany({ 
+      where: { status: 'ACTIVE' },
+      include: {
+        dependents: true
+      }
+    });
     const startDate = new Date(period.year, period.month - 1, 1);
     const endDate = new Date(period.year, period.month, 0);
+
+    // Fetch System Configs
+    const configs = await this.prisma.systemConfig.findMany();
+    const getConfig = (key: string, defaultVal: string) => {
+      const c = configs.find(c => c.key === key);
+      return c ? c.value : defaultVal;
+    };
+
+    const bhxhRate = parseFloat(getConfig('BHXH_EMPLOYEE_RATE', '0.08'));
+    const bhytRate = parseFloat(getConfig('BHYT_EMPLOYEE_RATE', '0.015'));
+    const bhtnRate = parseFloat(getConfig('BHTN_EMPLOYEE_RATE', '0.01'));
+    const personalDeduction = parseFloat(getConfig('PIT_PERSONAL_DEDUCTION', '11000000'));
+    const dependentDeduction = parseFloat(getConfig('PIT_DEPENDENT_DEDUCTION', '4400000'));
+    
+    let taxBrackets = [];
+    try {
+      taxBrackets = JSON.parse(getConfig('PIT_TAX_BRACKETS', '[]'));
+    } catch(e) {}
 
     let count = 0;
 
@@ -75,7 +98,7 @@ export class PayrollService {
       try {
         const parsed = JSON.parse(profile.allowances);
         if (parsed.note && !parsed.amount) {
-          allowanceTotal = 500000; // default standard allowance if only note is present
+          allowanceTotal = 500000;
         } else if (parsed.amount) {
           allowanceTotal = Number(parsed.amount);
         }
@@ -89,25 +112,63 @@ export class PayrollService {
       let otAmount = 0;
       const otHourlyRate = (profile.baseSalary / 22) / 8;
       for (const req of otRequests) {
-        let multiplier = 1.5;
-        if (req.dayType === 'WEEKEND') multiplier = 2.0;
-        if (req.dayType === 'HOLIDAY') multiplier = 3.0;
+        let multiplier = parseFloat(getConfig('OT_RATE_WEEKDAY', '1.5'));
+        if (req.dayType === 'WEEKEND') multiplier = parseFloat(getConfig('OT_RATE_WEEKEND', '2.0'));
+        if (req.dayType === 'HOLIDAY') multiplier = parseFloat(getConfig('OT_RATE_HOLIDAY', '3.0'));
         otAmount += req.hours * otHourlyRate * multiplier;
       }
 
-      // Base Income (assuming full 22 days for simplicity, real app would count attendance logs)
-      const workDays = 22;
-      const baseIncome = profile.baseSalary;
+      // Calculate actual work days from AttendanceLog
+      const attendanceLogs = await this.prisma.attendanceLog.findMany({
+        where: { employeeId: emp.id, date: { gte: startDate, lte: endDate }, status: 'APPROVED' }
+      });
+
+      // Approved leaves
+      const leaveRequests = await this.prisma.leaveRequest.findMany({
+        where: { employeeId: emp.id, status: 'APPROVED', fromDate: { lte: endDate }, toDate: { gte: startDate } },
+        include: { leaveType: true }
+      });
+
+      let workDays = attendanceLogs.length;
+
+      // Add paid leaves
+      for (const leave of leaveRequests) {
+        if (leave.leaveType.isPaid) {
+          const leaveStart = leave.fromDate < startDate ? startDate : leave.fromDate;
+          const leaveEnd = leave.toDate > endDate ? endDate : leave.toDate;
+          const diffTime = Math.abs(leaveEnd.getTime() - leaveStart.getTime());
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+          workDays += diffDays;
+        }
+      }
+
+      if (workDays > 22) workDays = 22; // Cap at 22 for simplicity of base calculation
+
+      const baseIncome = (profile.baseSalary / 22) * workDays;
       const bonus = 0;
       
       const grossIncome = baseIncome + allowanceTotal + otAmount + bonus;
-      // Insurances: BHXH(8%) + BHYT(1.5%) + BHTN(1%) = 10.5%
-      const insuranceEmployee = profile.baseSalary * 0.105;
       
-      // Simplified PIT (Personal Income Tax)
+      // Insurances
+      const insuranceEmployee = profile.baseSalary * (bhxhRate + bhytRate + bhtnRate);
+      
+      // Dependents
+      const totalDependentDeduction = emp.dependents.length * dependentDeduction;
+
+      // Taxable income
+      let taxable = grossIncome - insuranceEmployee - personalDeduction - totalDependentDeduction;
+      if (taxable < 0) taxable = 0;
+
+      // Calculate PIT with brackets
       let personalIncomeTax = 0;
-      const taxable = grossIncome - insuranceEmployee - 11000000;
-      if (taxable > 0) personalIncomeTax = taxable * 0.05; // 5% flat for simplicity
+      if (taxable > 0 && taxBrackets.length > 0) {
+        for (const bracket of taxBrackets) {
+          if (taxable > bracket.from) {
+            const amountInBracket = Math.min(taxable - bracket.from, (bracket.to || Infinity) - bracket.from);
+            personalIncomeTax += amountInBracket * bracket.rate;
+          }
+        }
+      }
 
       const netPay = grossIncome - insuranceEmployee - personalIncomeTax;
 
@@ -129,7 +190,7 @@ export class PayrollService {
           data: {
             periodId: period.id, employeeId: emp.id,
             workDays, baseIncome, allowanceTotal, otAmount, grossIncome,
-            insuranceEmployee, personalIncomeTax, netPay, status: 'DRAFT'
+            insuranceEmployee, personalIncomeTax, netPay
           }
         });
       }

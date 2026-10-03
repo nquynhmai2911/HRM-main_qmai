@@ -160,10 +160,36 @@ export class AttendanceService {
 
   async approveLeave(id: string, decision: 'APPROVED' | 'REJECTED', user: any) {
     if (!user?.employee?.id) throw new BadRequestException('User is not an employee');
-    const req = await this.prisma.leaveRequest.findUnique({ where: { id } });
+    const req = await this.prisma.leaveRequest.findUnique({ where: { id }, include: { leaveType: true } });
     if (!req) throw new NotFoundException('Leave request not found');
     if (req.approverId !== user.employee.id) {
       throw new BadRequestException('Bạn không có quyền duyệt đơn này');
+    }
+
+    if (decision === 'APPROVED' && req.leaveType.isPaid) {
+      const year = req.fromDate.getFullYear();
+      const diffTime = Math.abs(req.toDate.getTime() - req.fromDate.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+
+      // Ensure balance exists
+      let balance = await this.prisma.leaveBalance.findFirst({
+        where: { employeeId: req.employeeId, leaveTypeId: req.leaveTypeId, year }
+      });
+
+      if (!balance) {
+        balance = await this.prisma.leaveBalance.create({
+          data: { employeeId: req.employeeId, leaveTypeId: req.leaveTypeId, year, total: 12, used: 0 }
+        });
+      }
+
+      if (balance.used + diffDays > balance.total) {
+        throw new BadRequestException('Không đủ số dư phép');
+      }
+
+      await this.prisma.leaveBalance.update({
+        where: { id: balance.id },
+        data: { used: balance.used + diffDays }
+      });
     }
 
     return this.prisma.leaveRequest.update({
