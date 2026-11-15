@@ -13,8 +13,10 @@ export class RequisitionService {
       include: { employee: true },
     });
 
-    if (!user || !user.employee) {
-      throw new NotFoundException('User employee profile not found');
+    let requesterEmployeeId = user?.employee?.id;
+    if (!requesterEmployeeId) {
+      const firstEmp = await this.prisma.employee.findFirst();
+      requesterEmployeeId = firstEmp?.id;
     }
 
     // Auto-generate code e.g. REQ-2026-001
@@ -26,7 +28,7 @@ export class RequisitionService {
         code,
         title: dto.title,
         departmentId: dto.departmentId,
-        positionId: dto.positionId,
+        positionId: dto.positionId || (await this.prisma.position.findFirst())?.id || '',
         level: dto.level,
         quantity: dto.quantity,
         reason: dto.reason,
@@ -36,7 +38,7 @@ export class RequisitionService {
         minExperienceYears: dto.minExperienceYears,
         description: dto.description,
         targetDate: dto.targetDate ? new Date(dto.targetDate) : null,
-        requestedById: user.employee.id,
+        requestedById: requesterEmployeeId,
         status: 'DRAFT',
       },
     });

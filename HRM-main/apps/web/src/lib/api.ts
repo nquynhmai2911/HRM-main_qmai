@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002/api/v1';
 
 const apiClient = axios.create({
   baseURL: API_URL,
@@ -28,6 +28,10 @@ apiClient.interceptors.response.use(
     const originalRequest = error.config;
 
     if (error.response?.status === 401 && !originalRequest._retry) {
+      // Không tự động refresh token nếu đang gọi API login
+      if (originalRequest.url?.includes('/auth/login')) {
+        return Promise.reject(error);
+      }
       originalRequest._retry = true;
 
       try {
@@ -53,9 +57,13 @@ apiClient.interceptors.response.use(
       } catch (refreshError) {
         localStorage.removeItem('accessToken');
         localStorage.removeItem('refreshToken');
-        window.location.href = '/login';
+        localStorage.removeItem('user');
+        if (window.location.pathname !== '/login') {
+          window.location.href = '/login';
+        }
         return Promise.reject(refreshError);
       }
+
     }
 
     return Promise.reject(error);

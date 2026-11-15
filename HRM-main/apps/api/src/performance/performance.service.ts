@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -16,7 +16,11 @@ export class PerformanceService {
   }
 
   async create(data: any) {
-    const totalScore = ((data.kpiScore || 0) + (data.skillsScore || 0) + (data.attitudeScore || 0)) / 3;
+    const kpiScore = Number(data.kpiScore || 0);
+    const skillsScore = Number(data.skillsScore || 0);
+    const attitudeScore = Number(data.attitudeScore || 0);
+    const totalScore = Math.round(((kpiScore + skillsScore + attitudeScore) / 3) * 10) / 10;
+    
     let result = 'AVERAGE';
     if (totalScore >= 90) result = 'EXCELLENT';
     else if (totalScore >= 75) result = 'GOOD';
@@ -26,20 +30,27 @@ export class PerformanceService {
       data: {
         employeeId: data.employeeId,
         reviewerId: data.reviewerId,
-        period: data.period,
-        kpiScore: data.kpiScore,
-        skillsScore: data.skillsScore,
-        attitudeScore: data.attitudeScore,
+        period: data.period || '2026',
+        kpiScore,
+        skillsScore,
+        attitudeScore,
         totalScore,
-        result,
-        comment: data.comment,
+        result: data.result || result,
+        comment: data.comment || data.feedback || '',
         status: data.status || 'DRAFT',
       }
     });
   }
 
   async update(id: string, data: any) {
-    const totalScore = ((data.kpiScore || 0) + (data.skillsScore || 0) + (data.attitudeScore || 0)) / 3;
+    const review = await this.prisma.performanceReview.findUnique({ where: { id } });
+    if (!review) throw new NotFoundException('Performance review not found');
+
+    const kpiScore = data.kpiScore !== undefined ? Number(data.kpiScore) : (review.kpiScore || 0);
+    const skillsScore = data.skillsScore !== undefined ? Number(data.skillsScore) : (review.skillsScore || 0);
+    const attitudeScore = data.attitudeScore !== undefined ? Number(data.attitudeScore) : (review.attitudeScore || 0);
+    const totalScore = Math.round(((kpiScore + skillsScore + attitudeScore) / 3) * 10) / 10;
+
     let result = 'AVERAGE';
     if (totalScore >= 90) result = 'EXCELLENT';
     else if (totalScore >= 75) result = 'GOOD';
@@ -48,18 +59,20 @@ export class PerformanceService {
     return this.prisma.performanceReview.update({
       where: { id },
       data: {
-        kpiScore: data.kpiScore,
-        skillsScore: data.skillsScore,
-        attitudeScore: data.attitudeScore,
+        kpiScore,
+        skillsScore,
+        attitudeScore,
         totalScore,
-        result,
-        comment: data.comment,
-        status: data.status,
+        result: data.result || result,
+        comment: data.comment !== undefined ? data.comment : review.comment,
+        status: data.status !== undefined ? data.status : review.status,
       }
     });
   }
 
-  remove(id: string) {
+  async remove(id: string) {
+    const review = await this.prisma.performanceReview.findUnique({ where: { id } });
+    if (!review) throw new NotFoundException('Performance review not found');
     return this.prisma.performanceReview.delete({ where: { id } });
   }
 }

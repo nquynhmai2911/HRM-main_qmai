@@ -167,6 +167,8 @@ const RequisitionListPage: React.FC = () => {
       title: 'Mã YCTD',
       dataIndex: 'code',
       key: 'code',
+      width: 120,
+      align: 'center' as const,
       render: (text: string) => <strong>{text}</strong>,
     },
     {
@@ -190,6 +192,8 @@ const RequisitionListPage: React.FC = () => {
       title: 'Số lượng',
       dataIndex: 'quantity',
       key: 'quantity',
+      width: 100,
+      align: 'center' as const,
     },
     {
       title: 'Người yêu cầu',
@@ -200,6 +204,8 @@ const RequisitionListPage: React.FC = () => {
       title: 'Trạng thái',
       dataIndex: 'status',
       key: 'status',
+      width: 150,
+      align: 'center' as const,
       render: (status: string) => {
         const statusMap: Record<string, { color: string; text: string }> = {
           DRAFT: { color: 'default', text: 'Bản nháp' },
@@ -219,37 +225,88 @@ const RequisitionListPage: React.FC = () => {
     {
       title: 'Hành động',
       key: 'action',
+      width: 200,
+      fixed: 'right' as const,
+      align: 'center' as const,
       render: (record: any) => {
-        const canApproveHR = (user?.role === 'HR_MANAGER' || user?.role === 'ADMIN') && record.status === 'PENDING_HR_APPROVAL';
+        const canApproveHR = (user?.role === 'HR_MANAGER' || user?.role === 'HR_STAFF' || user?.role === 'ADMIN' || user?.permissions?.includes('requisition:approve')) && record.status === 'PENDING_HR_APPROVAL';
         const canApproveCEO = (user?.role === 'CEO' || user?.role === 'ADMIN') && record.status === 'PENDING_CEO_APPROVAL';
         const canApprove = canApproveHR || canApproveCEO;
 
+        const isEditable = record.status === 'DRAFT' || record.status === 'NEEDS_REVISION';
+        const hasPipeline = record.status === 'APPROVED' || record.status === 'OPEN';
+
         return (
-          <Space size="small">
-            <Button type="text" icon={<EyeOutlined />} title="Xem chi tiết JD" onClick={() => handleView(record)} />
-            {(record.status === 'DRAFT' || record.status === 'NEEDS_REVISION') && (
-              <>
-                <Button type="text" icon={<EditOutlined />} style={{ color: '#1677ff' }} title="Sửa" onClick={() => handleEdit(record)} />
-                <Button type="text" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.id)} title="Xóa" />
-                <Button type="text" icon={<SendOutlined />} style={{ color: '#52c41a' }} onClick={() => handleSubmit(record.id)} title={record.status === 'NEEDS_REVISION' ? "Gửi duyệt lại" : "Gửi duyệt"} />
-              </>
-            )}
-            {canApprove && (
-              <Button type="text" icon={<CheckCircleOutlined />} style={{ color: '#fa8c16' }} onClick={() => handleOpenApproval(record)} title="Phê duyệt" />
-            )}
-            {record.status === 'APPROVED' && (
-              <Button type="text" icon={<GlobalOutlined />} style={{ color: '#722ed1' }} onClick={() => handlePublish(record.id)} title="Đăng tin (Mở tuyển)" />
-            )}
-            {(record.status === 'APPROVED' || record.status === 'OPEN') && (
+          <Space size={4} wrap={false} style={{ justifyContent: 'center' }}>
+            <Tooltip title="Xem chi tiết yêu cầu tuyển dụng">
               <Button 
-                type="text" 
-                size="small"
-                style={{ color: '#1677ff' }}
-                icon={<UserAddOutlined />} 
-                onClick={() => navigate(`/recruitment/pipeline/${record.id}`)} 
-                title="Danh sách ứng viên (Pipeline)"
+                type="text"
+                size="small" 
+                icon={<EyeOutlined style={{ color: '#1677ff' }} />} 
+                onClick={() => handleView(record)}
               />
-            )}
+            </Tooltip>
+
+            <Tooltip title={isEditable ? 'Chỉnh sửa yêu cầu' : 'Không thể sửa khi đang duyệt/đã mở tuyển'}>
+              <span>
+                <Button 
+                  type="text" 
+                  size="small" 
+                  disabled={!isEditable} 
+                  icon={<EditOutlined style={{ color: isEditable ? '#1677ff' : undefined }} />} 
+                  onClick={() => handleEdit(record)} 
+                />
+              </span>
+            </Tooltip>
+
+            <Tooltip title={isEditable ? 'Xóa yêu cầu' : 'Không thể xóa khi đã được xử lý'}>
+              <span>
+                <Button 
+                  type="text" 
+                  size="small" 
+                  danger 
+                  disabled={!isEditable} 
+                  icon={<DeleteOutlined />} 
+                  onClick={() => handleDelete(record.id)} 
+                />
+              </span>
+            </Tooltip>
+
+            <Tooltip title={isEditable ? (record.status === 'NEEDS_REVISION' ? 'Gửi duyệt lại' : 'Gửi phê duyệt') : 'Đã gửi duyệt'}>
+              <span>
+                <Button 
+                  type="text" 
+                  size="small" 
+                  disabled={!isEditable} 
+                  icon={<SendOutlined style={{ color: isEditable ? '#52c41a' : undefined }} />} 
+                  onClick={() => handleSubmit(record.id)} 
+                />
+              </span>
+            </Tooltip>
+
+            <Tooltip title={hasPipeline ? 'Danh sách ứng viên (Pipeline)' : 'Chưa mở tuyển để nhận ứng viên'}>
+              <span>
+                <Button 
+                  type="text" 
+                  size="small"
+                  disabled={!hasPipeline}
+                  icon={<UserAddOutlined style={{ color: hasPipeline ? '#1677ff' : undefined }} />} 
+                  onClick={() => navigate(`/recruitment/pipeline/${record.id}`)} 
+                />
+              </span>
+            </Tooltip>
+
+            <Tooltip title={canApprove ? "Phê duyệt yêu cầu tuyển dụng" : "Không có quyền duyệt hoặc chưa đến lượt"}>
+              <span>
+                <Button 
+                  type="text" 
+                  size="small" 
+                  disabled={!canApprove}
+                  icon={<CheckCircleOutlined style={{ color: canApprove ? '#fa8c16' : undefined }} />} 
+                  onClick={() => canApprove && handleOpenApproval(record)} 
+                />
+              </span>
+            </Tooltip>
           </Space>
         );
       },
@@ -276,7 +333,7 @@ const RequisitionListPage: React.FC = () => {
               onPressEnter={() => fetchRequisitions()}
               style={{ width: 250 }}
             />
-            <PermissionGate resource="requisition" action="create">
+            {(user?.role === 'ADMIN' || user?.role === 'MANAGER' || user?.role === 'HR_MANAGER' || user?.role === 'HR_STAFF' || user?.permissions?.includes('requisition:create')) && (
               <Button type="primary" icon={<PlusOutlined />} onClick={() => {
                 setEditingId(null);
                 form.resetFields();
@@ -284,7 +341,7 @@ const RequisitionListPage: React.FC = () => {
               }}>
                 Tạo Yêu cầu mới
               </Button>
-            </PermissionGate>
+            )}
           </div>
         </div>
 
@@ -294,6 +351,7 @@ const RequisitionListPage: React.FC = () => {
             columns={columns}
             rowKey="id"
             loading={loading}
+            scroll={{ x: 1300 }}
           />
         </Card>
       </Space>
@@ -375,7 +433,25 @@ const RequisitionListPage: React.FC = () => {
         open={!!viewRecord}
         onCancel={() => setViewRecord(null)}
         footer={[
-          <Button key="close" onClick={() => setViewRecord(null)}>Đóng</Button>
+          <Button key="close" onClick={() => setViewRecord(null)}>Đóng</Button>,
+          viewRecord && (
+            (((user?.role === 'HR_MANAGER' || user?.role === 'HR_STAFF' || user?.role === 'ADMIN' || user?.permissions?.includes('requisition:approve')) && viewRecord.status === 'PENDING_HR_APPROVAL') ||
+            ((user?.role === 'CEO' || user?.role === 'ADMIN') && viewRecord.status === 'PENDING_CEO_APPROVAL'))
+          ) && (
+            <Button
+              key="approve"
+              type="primary"
+              icon={<CheckCircleOutlined />}
+              style={{ backgroundColor: '#fa8c16', borderColor: '#fa8c16' }}
+              onClick={() => {
+                const target = viewRecord;
+                setViewRecord(null);
+                handleOpenApproval(target);
+              }}
+            >
+              Phê duyệt
+            </Button>
+          )
         ]}
         width={600}
       >

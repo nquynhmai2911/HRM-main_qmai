@@ -1,0 +1,22 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Chạy Web HRM (API + Web)",
+      "type": "shell",
+      "command": "node start-all.js",
+      "isBackground": true,
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "Dừng Web HRM",
+      "type": "shell",
+      "command": "node stop-all.js",
+      "problemMatcher": []
+    }
+  ]
+}

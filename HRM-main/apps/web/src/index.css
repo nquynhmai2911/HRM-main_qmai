@@ -179,3 +179,112 @@ body {
   background: #f1f5f9;
   color: #475569;
 }
+
+/* Sidebar Menu - Soft modern slate with subtle active state (no harsh dark blue block) */
+.ant-layout-sider,
+.ant-pro-sider,
+.ant-pro-sider-fixed {
+  background-color: #1e293b !important;
+}
+
+.ant-layout-sider .ant-menu,
+.ant-pro-sider .ant-menu,
+.ant-pro-sider .ant-menu-dark,
+.ant-pro-sider-menu .ant-menu {
+  background-color: transparent !important;
+}
+
+.ant-layout-sider .ant-menu-item,
+.ant-pro-sider .ant-menu-item,
+.ant-pro-sider-menu .ant-menu-item {
+  border-radius: 8px !important;
+  margin: 4px 8px !important;
+  width: calc(100% - 16px) !important;
+  transition: all 0.2s ease !important;
+  color: #94a3b8 !important;
+}
+
+/* Selected item in Sider Menu: soft light tint, NO dark blue block */
+.ant-layout-sider .ant-menu-item-selected,
+.ant-pro-sider .ant-menu-item-selected,
+.ant-pro-sider .ant-menu-dark .ant-menu-item-selected,
+.ant-menu-dark.ant-menu-inline .ant-menu-item-selected,
+.ant-menu-dark .ant-menu-item-selected,
+.ant-menu-dark .ant-menu-sub .ant-menu-item-selected {
+  background-color: rgba(56, 189, 248, 0.14) !important;
+  color: #38bdf8 !important;
+  font-weight: 600 !important;
+  border-left: 3px solid #38bdf8 !important;
+}
+
+.ant-layout-sider .ant-menu-item-selected .anticon,
+.ant-pro-sider .ant-menu-item-selected .anticon,
+.ant-menu-dark .ant-menu-item-selected .anticon,
+.ant-layout-sider .ant-menu-item-selected .ant-menu-title-content,
+.ant-pro-sider .ant-menu-item-selected .ant-menu-title-content,
+.ant-layout-sider .ant-menu-item-selected a,
+.ant-pro-sider .ant-menu-item-selected a {
+  color: #38bdf8 !important;
+  font-weight: 600 !important;
+}
+
+.ant-layout-sider .ant-menu-item:hover:not(.ant-menu-item-selected),
+.ant-pro-sider .ant-menu-item:hover:not(.ant-menu-item-selected),
+.ant-menu-dark .ant-menu-item:hover:not(.ant-menu-item-selected) {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+  color: #ffffff !important;
+}
+
+/* Submenu parent active state: soft clean highlight */
+.ant-layout-sider .ant-menu-submenu-title:hover,
+.ant-pro-sider .ant-menu-submenu-title:hover,
+.ant-menu-dark .ant-menu-submenu-title:hover {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+  color: #ffffff !important;
+}
+
+.ant-layout-sider .ant-menu-submenu-selected > .ant-menu-submenu-title,
+.ant-pro-sider .ant-menu-submenu-selected > .ant-menu-submenu-title,
+.ant-menu-dark .ant-menu-submenu-selected > .ant-menu-submenu-title {
+  color: #38bdf8 !important;
+  font-weight: 600 !important;
+}
+
+/* Top Nav Header Menu - Soft, light styling without harsh dark blue blocks */
+.ant-pro-top-nav-header,
+.ant-layout-header {
+  background-color: #ffffff !important;
+}
+
+.ant-pro-top-nav-header .ant-menu,
+.ant-layout-header .ant-menu {
+  background: transparent !important;
+}
+
+.ant-pro-top-nav-header .ant-menu-item,
+.ant-layout-header .ant-menu-item {
+  border-radius: 6px !important;
+  transition: all 0.2s ease !important;
+  color: #475569 !important;
+  font-weight: 500 !important;
+}
+
+.ant-pro-top-nav-header .ant-menu-item-selected,
+.ant-layout-header .ant-menu-item-selected {
+  background-color: rgba(2, 132, 199, 0.08) !important;
+  color: #0284c7 !important;
+  font-weight: 600 !important;
+}
+
+.ant-pro-top-nav-header .ant-menu-item-selected a,
+.ant-layout-header .ant-menu-item-selected a {
+  color: #0284c7 !important;
+}
+
+.ant-pro-top-nav-header .ant-menu-item:hover,
+.ant-layout-header .ant-menu-item:hover {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+}
+
+

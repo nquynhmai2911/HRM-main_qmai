@@ -7,7 +7,7 @@ import {
 import {
   AuditOutlined, CheckCircleOutlined, CloseCircleOutlined, UserOutlined,
   ClockCircleOutlined, CalendarOutlined, DollarOutlined, TeamOutlined,
-  TrophyOutlined
+  TrophyOutlined, MailOutlined
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
@@ -154,55 +154,136 @@ const ProbationListPage: React.FC = () => {
 
   const columns = [
     {
-      title: 'Nhân sự thử việc',
-      key: 'employee',
+      title: 'Mã NV',
+      key: 'empCode',
+      width: 105,
+      fixed: 'left' as const,
       render: (record: any) => (
-        <div>
-          <div style={{ fontWeight: 600, color: '#1e3a8a', fontSize: 14 }}>
-            {record.employee?.fullName}
-          </div>
-          <div style={{ fontSize: 12, color: '#64748b' }}>
-            Mã: <Tag color="blue" style={{ fontSize: 11 }}>{record.employee?.employeeCode}</Tag>
-            | {record.employee?.workEmail}
-          </div>
-        </div>
+        <Tag
+          color="blue"
+          style={{
+            fontFamily: 'monospace',
+            fontWeight: 700,
+            fontSize: 12,
+            borderRadius: 4,
+            padding: '1px 8px',
+          }}
+        >
+          {record.employee?.employeeCode || '-'}
+        </Tag>
       ),
     },
     {
-      title: 'Vị trí & Phòng ban',
+      title: 'Họ và tên',
+      key: 'empName',
+      width: 175,
+      fixed: 'left' as const,
+      render: (record: any) => (
+        <span style={{ fontWeight: 600, color: '#0f172a', fontSize: 13.5 }}>
+          {record.employee?.fullName || '-'}
+        </span>
+      ),
+    },
+    {
+      title: 'Email',
+      key: 'email',
+      width: 205,
+      render: (record: any) => {
+        const email = record.employee?.workEmail || record.employee?.personalEmail;
+        if (!email) return <span style={{ color: '#94a3b8' }}>-</span>;
+        return (
+          <span style={{ fontSize: 12.5, color: '#334155' }}>
+            <MailOutlined style={{ marginRight: 6, color: '#94a3b8' }} />
+            {email}
+          </span>
+        );
+      },
+    },
+    {
+      title: 'Phòng ban',
       key: 'department',
+      width: 180,
+      render: (record: any) => {
+        const dept = record.employee?.department?.name;
+        return dept ? (
+          <Tag color="cyan" style={{ borderRadius: 4, fontWeight: 500, fontSize: 12, padding: '2px 8px' }}>
+            {dept}
+          </Tag>
+        ) : <span style={{ color: '#94a3b8' }}>-</span>;
+      },
+    },
+    {
+      title: 'Chức vụ',
+      key: 'position',
+      width: 165,
       render: (record: any) => (
-        <div>
-          <div style={{ fontWeight: 500 }}>{record.employee?.position?.name || 'N/A'}</div>
-          <Text type="secondary" style={{ fontSize: 12 }}>{record.employee?.department?.name || 'N/A'}</Text>
-        </div>
+        <span style={{ fontWeight: 600, color: '#1e293b', fontSize: 13 }}>
+          {record.employee?.position?.name || <span style={{ color: '#94a3b8', fontWeight: 400 }}>-</span>}
+        </span>
       ),
     },
     {
-      title: 'Thời gian thử việc',
-      key: 'duration',
-      render: (record: any) => (
-        <div>
-          <div style={{ fontSize: 13 }}>
-            <CalendarOutlined style={{ marginRight: 6, color: '#1677ff' }} />
-            {dayjs(record.startDate).format('DD/MM/YYYY')} - {record.endDate ? dayjs(record.endDate).format('DD/MM/YYYY') : '60 ngày'}
-          </div>
-          <Text type="secondary" style={{ fontSize: 11 }}>Lương: {record.baseSalary?.toLocaleString()} VNĐ ({record.probationSalaryPercent || 85}%)</Text>
-        </div>
+      title: 'Lương thử việc',
+      dataIndex: 'baseSalary',
+      key: 'baseSalary',
+      width: 150,
+      align: 'right' as const,
+      render: (salary: number) => salary ? (
+        <span style={{ color: '#059669', fontWeight: 700, fontSize: 13, fontFamily: 'monospace' }}>
+          {salary.toLocaleString('vi-VN')} đ
+        </span>
+      ) : <span style={{ color: '#94a3b8' }}>-</span>,
+    },
+    {
+      title: 'Tỷ lệ hưởng',
+      dataIndex: 'probationSalaryPercent',
+      key: 'probationSalaryPercent',
+      width: 115,
+      align: 'center' as const,
+      render: (percent: number) => (
+        <Tag color="warning" bordered={false} style={{ fontWeight: 600, fontSize: 12 }}>
+          {percent || 85}%
+        </Tag>
       ),
     },
     {
-      title: 'Đánh giá Tuần 2 (14 ngày)',
+      title: 'Ngày bắt đầu',
+      dataIndex: 'startDate',
+      key: 'startDate',
+      width: 125,
+      align: 'center' as const,
+      render: (date: any) => (
+        <span style={{ fontSize: 13, color: '#475569' }}>
+          {date ? dayjs(date).format('DD/MM/YYYY') : '-'}
+        </span>
+      ),
+    },
+    {
+      title: 'Ngày kết thúc',
+      dataIndex: 'endDate',
+      key: 'endDate',
+      width: 125,
+      align: 'center' as const,
+      render: (date: any) => (
+        <span style={{ fontSize: 13, color: '#475569' }}>
+          {date ? dayjs(date).format('DD/MM/YYYY') : '60 ngày'}
+        </span>
+      ),
+    },
+    {
+      title: 'Đánh giá Tuần 2',
       key: 'week2',
+      width: 155,
+      align: 'center' as const,
       render: (record: any) => {
         const milestones = parseMilestones(record);
         const w2 = milestones.week2;
         if (!w2 || w2.status !== 'EVALUATED') {
-          return <Tag color="default">Chờ đánh giá</Tag>;
+          return <Tag color="default" style={{ fontWeight: 500 }}>Chờ đánh giá</Tag>;
         }
         return (
           <Tooltip title={`Chuyên môn: ${w2.technicalScore}/10 | Thái độ: ${w2.attitudeScore}/10 - Nhận xét: ${w2.comment || 'Tốt'}`}>
-            <Tag color={w2.result === 'PASS' ? 'success' : 'warning'}>
+            <Tag color={w2.result === 'PASS' ? 'success' : 'warning'} style={{ fontWeight: 600 }}>
               {w2.result === 'PASS' ? `Đạt (${w2.technicalScore}đ)` : 'Cần cải thiện'}
             </Tag>
           </Tooltip>
@@ -210,17 +291,19 @@ const ProbationListPage: React.FC = () => {
       },
     },
     {
-      title: 'Đánh giá Tuần 4 (30 ngày)',
+      title: 'Đánh giá Tuần 4',
       key: 'week4',
+      width: 155,
+      align: 'center' as const,
       render: (record: any) => {
         const milestones = parseMilestones(record);
         const w4 = milestones.week4;
         if (!w4 || w4.status !== 'EVALUATED') {
-          return <Tag color="default">Chờ đánh giá</Tag>;
+          return <Tag color="default" style={{ fontWeight: 500 }}>Chờ đánh giá</Tag>;
         }
         return (
           <Tooltip title={`Chuyên môn: ${w4.technicalScore}/10 | Thái độ: ${w4.attitudeScore}/10 - Nhận xét: ${w4.comment || 'Tốt'}`}>
-            <Tag color={w4.result === 'PASS' ? 'success' : 'warning'}>
+            <Tag color={w4.result === 'PASS' ? 'success' : 'warning'} style={{ fontWeight: 600 }}>
               {w4.result === 'PASS' ? `Đạt (${w4.technicalScore}đ)` : 'Cần cải thiện'}
             </Tag>
           </Tooltip>
@@ -228,17 +311,19 @@ const ProbationListPage: React.FC = () => {
       },
     },
     {
-      title: 'Đánh giá Tuần 8 (Tổng kết)',
+      title: 'Đánh giá Tuần 8',
       key: 'week8',
+      width: 155,
+      align: 'center' as const,
       render: (record: any) => {
         const milestones = parseMilestones(record);
         const w8 = milestones.week8;
         if (!w8 || w8.status !== 'EVALUATED') {
-          return <Tag color="default">Chờ đánh giá</Tag>;
+          return <Tag color="default" style={{ fontWeight: 500 }}>Chờ đánh giá</Tag>;
         }
         return (
           <Tooltip title={`Chuyên môn: ${w8.technicalScore}/10 | Thái độ: ${w8.attitudeScore}/10 - Nhận xét: ${w8.comment || 'Tốt'}`}>
-            <Tag color={w8.result === 'PASS' ? 'success' : 'error'}>
+            <Tag color={w8.result === 'PASS' ? 'success' : 'error'} style={{ fontWeight: 600 }}>
               {w8.result === 'PASS' ? `Đạt (${w8.technicalScore}đ)` : 'Không đạt'}
             </Tag>
           </Tooltip>
@@ -248,56 +333,61 @@ const ProbationListPage: React.FC = () => {
     {
       title: 'Trạng thái',
       key: 'status',
+      width: 165,
+      align: 'center' as const,
       render: (record: any) => {
         if (record.status === 'COMPLETED') {
-          return <Tag color="green">Đã chuyển Chính thức</Tag>;
+          return <Tag color="success" style={{ fontWeight: 600 }}>Đã chuyển chính thức</Tag>;
         }
         if (record.status === 'TERMINATED') {
-          return <Tag color="red">Dừng thử việc</Tag>;
+          return <Tag color="error" style={{ fontWeight: 600 }}>Dừng thử việc</Tag>;
         }
-        return <Tag color="processing">Đang thử việc</Tag>;
+        return <Tag color="processing" style={{ fontWeight: 600 }}>Đang thử việc</Tag>;
       },
     },
     {
       title: 'Hành động',
       key: 'actions',
+      width: 140,
+      align: 'center' as const,
+      fixed: 'right' as const,
       render: (record: any) => {
         const isFinished = record.status === 'COMPLETED' || record.status === 'TERMINATED';
         return (
-          <Space size="small">
-            <Button
-              size="small"
-              icon={<AuditOutlined />}
-              onClick={() => openEvaluationModal(record)}
-              title="Đánh giá các mốc (2, 4, 8 tuần)"
-            >
-              Đánh giá
-            </Button>
+          <Space size={6} wrap={false} style={{ justifyContent: 'center' }}>
+            <Tooltip title="Đánh giá các mốc thử việc (2, 4, 8 tuần)">
+              <Button
+                type="text"
+                size="small"
+                icon={<AuditOutlined style={{ color: '#1677ff' }} />}
+                onClick={() => openEvaluationModal(record)}
+              />
+            </Tooltip>
 
-            {!isFinished && (
-              <>
+            <Tooltip title={!isFinished ? 'Đạt thử việc — Tiếp nhận chính thức' : 'Thử việc đã kết thúc'}>
+              <span>
                 <Button
-                  type="primary"
+                  type="text"
                   size="small"
-                  style={{ background: '#16a34a', borderColor: '#16a34a' }}
-                  icon={<CheckCircleOutlined />}
+                  disabled={isFinished}
+                  icon={<CheckCircleOutlined style={{ color: !isFinished ? '#16a34a' : undefined }} />}
                   onClick={() => openDecisionModal(record, 'ACCEPT')}
-                  title="Đạt thử việc - Chuyển sang Nhân viên chính thức"
-                >
-                  Nhận việc
-                </Button>
+                />
+              </span>
+            </Tooltip>
 
+            <Tooltip title={!isFinished ? 'Không đạt — Dừng thử việc' : 'Thử việc đã kết thúc'}>
+              <span>
                 <Button
+                  type="text"
                   danger
                   size="small"
+                  disabled={isFinished}
                   icon={<CloseCircleOutlined />}
                   onClick={() => openDecisionModal(record, 'REJECT')}
-                  title="Không đạt - Dừng thử việc"
-                >
-                  Từ chối
-                </Button>
-              </>
-            )}
+                />
+              </span>
+            </Tooltip>
           </Space>
         );
       },
@@ -356,7 +446,13 @@ const ProbationListPage: React.FC = () => {
           dataSource={probationList}
           rowKey="id"
           loading={loading}
-          pagination={{ pageSize: 10 }}
+          scroll={{ x: 2200 }}
+          pagination={{ 
+            pageSize: 10,
+            showSizeChanger: true,
+            pageSizeOptions: ['10', '20', '50'],
+            showTotal: (total) => `Tổng cộng ${total} nhân sự thử việc`
+          }}
         />
       </Card>
 

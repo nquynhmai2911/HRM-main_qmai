@@ -2,12 +2,16 @@ import { Controller, Get, Post, Put, Delete, Body, Param, Req } from '@nestjs/co
 import { PerformanceService } from './performance.service';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Auth } from '../auth/decorators/auth.decorator';
+import { PrismaService } from '../prisma/prisma.service';
 
 @ApiTags('performance')
 @ApiBearerAuth()
 @Controller('performance/reviews')
 export class PerformanceController {
-  constructor(private readonly performanceService: PerformanceService) {}
+  constructor(
+    private readonly performanceService: PerformanceService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   @Get()
   @Auth()
@@ -17,10 +21,15 @@ export class PerformanceController {
 
   @Post()
   @Auth('ADMIN', 'HR_MANAGER', 'MANAGER')
-  create(@Body() data: any, @Req() req: any) {
+  async create(@Body() data: any, @Req() req: any) {
+    let reviewerId = data.reviewerId || req.user?.employee?.id;
+    if (!reviewerId) {
+      const firstEmp = await this.prisma.employee.findFirst();
+      reviewerId = firstEmp?.id || data.employeeId;
+    }
     return this.performanceService.create({
       ...data,
-      reviewerId: data.reviewerId || req.user.employeeId
+      reviewerId,
     });
   }
 

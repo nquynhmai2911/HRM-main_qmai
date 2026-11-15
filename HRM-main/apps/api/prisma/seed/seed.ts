@@ -285,10 +285,10 @@ async function main() {
     { resource: 'employee', action: 'update', scope: 'own', roles: ['EMPLOYEE'] },
 
     // Requisition
-    { resource: 'requisition', action: 'create', scope: 'team', roles: ['MANAGER'] },
+    { resource: 'requisition', action: 'create', scope: 'all', roles: ['ADMIN', 'MANAGER', 'HR_MANAGER', 'HR_STAFF'] },
     { resource: 'requisition', action: 'read', scope: 'all', roles: ['CEO', 'HR_MANAGER', 'HR_STAFF'] },
     { resource: 'requisition', action: 'read', scope: 'team', roles: ['MANAGER'] },
-    { resource: 'requisition', action: 'approve', scope: 'all', roles: ['HR_MANAGER', 'CEO'] },
+    { resource: 'requisition', action: 'approve', scope: 'all', roles: ['ADMIN', 'HR_MANAGER', 'HR_STAFF', 'CEO'] },
 
     // Candidate
     { resource: 'candidate', action: 'create', scope: 'all', roles: ['HR_MANAGER', 'HR_STAFF'] },
@@ -369,7 +369,7 @@ async function main() {
     update: {},
     create: {
       employeeCode: 'DTS0001',
-      fullName: 'System Administrator',
+      fullName: 'Quản trị viên',
       dob: new Date('1990-01-01'),
       gender: "MALE",
       idNumber: '000000000001',

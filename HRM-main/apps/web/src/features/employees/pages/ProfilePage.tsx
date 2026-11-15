@@ -8,6 +8,16 @@ import dayjs from 'dayjs';
 const { Title, Text } = Typography;
 const { TabPane } = Tabs;
 
+const ROLE_NAMES: Record<string, string> = {
+  ADMIN: 'Quản trị viên',
+  CEO: 'Ban Giám đốc',
+  HR_MANAGER: 'Trưởng phòng Nhân sự',
+  HR_STAFF: 'Chuyên viên Nhân sự',
+  ACCOUNTANT: 'Kế toán viên',
+  MANAGER: 'Trưởng phòng',
+  EMPLOYEE: 'Nhân viên',
+};
+
 const ProfilePage: React.FC = () => {
   const { user } = useAuthStore();
   const [employee, setEmployee] = useState<any>(null);
@@ -40,7 +50,7 @@ const ProfilePage: React.FC = () => {
           <Title level={4}>Thông tin tài khoản</Title>
           <Descriptions bordered column={1}>
             <Descriptions.Item label="Email đăng nhập">{user?.email}</Descriptions.Item>
-            <Descriptions.Item label="Quyền (Role)"><Tag color="blue">{user?.role}</Tag></Descriptions.Item>
+            <Descriptions.Item label="Quyền (Role)"><Tag color="blue">{ROLE_NAMES[user?.role || ''] || user?.role}</Tag></Descriptions.Item>
           </Descriptions>
           <div style={{ marginTop: 16 }}>
             <Text type="secondary">Tài khoản này chưa được liên kết với một Hồ sơ nhân sự nào trong hệ thống.</Text>
@@ -115,7 +125,7 @@ const ProfilePage: React.FC = () => {
             <Descriptions bordered column={1}>
               <Descriptions.Item label="Tên đăng nhập">{user?.email}</Descriptions.Item>
               <Descriptions.Item label="Quyền hạn hệ thống (Role)">
-                <Tag color="blue">{user?.role}</Tag>
+                <Tag color="blue">{ROLE_NAMES[user?.role || ''] || user?.role}</Tag>
               </Descriptions.Item>
               <Descriptions.Item label="Trạng thái tài khoản">
                 <Tag color="success" icon={<SafetyCertificateOutlined />}>Đang hoạt động (Bảo mật an toàn)</Tag>

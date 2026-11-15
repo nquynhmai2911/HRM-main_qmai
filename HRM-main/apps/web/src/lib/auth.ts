@@ -30,16 +30,26 @@ interface AuthState {
   hasAnyPermission: (permissions: string[]) => boolean;
 }
 
+const getStoredUser = (): UserInfo | null => {
+  try {
+    const raw = localStorage.getItem('user');
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
 export const useAuthStore = create<AuthState>((set, get) => ({
-  user: null,
+  user: getStoredUser(),
   accessToken: localStorage.getItem('accessToken'),
   isAuthenticated: !!localStorage.getItem('accessToken'),
-  isLoading: true,
+  isLoading: false,
   mustChangePassword: false,
 
   setAuth: (user, accessToken, refreshToken) => {
     localStorage.setItem('accessToken', accessToken);
     localStorage.setItem('refreshToken', refreshToken);
+    localStorage.setItem('user', JSON.stringify(user));
     set({
       user,
       accessToken,
@@ -50,12 +60,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   setUser: (user) => {
+    localStorage.setItem('user', JSON.stringify(user));
     set({ user, isAuthenticated: true, isLoading: false });
   },
 
   logout: () => {
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
+    localStorage.removeItem('user');
     set({
       user: null,
       accessToken: null,

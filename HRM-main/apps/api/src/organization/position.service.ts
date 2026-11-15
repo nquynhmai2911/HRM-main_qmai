@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Injectable, NotFoundException, BadRequestException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 
 @Injectable()
@@ -35,9 +35,18 @@ export class PositionService {
   }
 
   async remove(id: string) {
-    const position = await this.prisma.position.findUnique({ where: { id } });
+    const position = await this.prisma.position.findUnique({
+      where: { id },
+      include: {
+        _count: {
+          select: { employees: true }
+        }
+      }
+    });
     if (!position) throw new NotFoundException('Position not found');
-    
+    if (position._count.employees > 0) {
+      throw new BadRequestException('Không thể xóa chức danh đang có nhân viên.');
+    }
     return this.prisma.position.delete({ where: { id } });
   }
 }

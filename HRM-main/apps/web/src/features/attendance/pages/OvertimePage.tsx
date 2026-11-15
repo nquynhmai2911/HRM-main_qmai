@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Typography, Table, Button, Tag, Modal, Form, DatePicker, Select, InputNumber, Input, message, Tabs } from 'antd';
+import { Card, Typography, Table, Button, Tag, Modal, Form, DatePicker, Select, InputNumber, Input, message, Tabs, Space, Tooltip } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import apiClient from '../../../lib/api';
 import dayjs from 'dayjs';
@@ -47,7 +47,7 @@ const OvertimePage = () => {
         endTime: values.timeRange[1].toISOString(),
       };
       await apiClient.post('/attendance/overtime/request', payload);
-      message.success('Đã gửi đơn làm thêm giờ (OT)');
+      message.success('Đã gửi đơn đăng ký làm thêm giờ');
       setIsModalOpen(false);
       form.resetFields();
       fetchRequests();
@@ -126,13 +126,38 @@ const OvertimePage = () => {
     {
       title: 'Hành động',
       key: 'action',
+      width: 170,
+      align: 'center' as const,
       render: (_: any, r: any) => {
-        if (r.status !== 'PENDING') return null;
+        const isPending = r.status === 'PENDING';
         return (
-          <div style={{ display: 'flex', gap: 8 }}>
-            <Button type="primary" size="small" onClick={() => handleApprove(r.id, 'APPROVED')}>Duyệt</Button>
-            <Button danger size="small" onClick={() => handleApprove(r.id, 'REJECTED')}>Từ chối</Button>
-          </div>
+          <Space size={6} style={{ justifyContent: 'center' }}>
+            <Tooltip title={isPending ? 'Phê duyệt làm thêm giờ' : 'Đơn đã được xử lý'}>
+              <span>
+                <Button 
+                  type="primary" 
+                  size="small" 
+                  disabled={!isPending}
+                  style={{ background: isPending ? '#52c41a' : undefined, borderColor: isPending ? '#52c41a' : undefined }}
+                  onClick={() => handleApprove(r.id, 'APPROVED')}
+                >
+                  Duyệt
+                </Button>
+              </span>
+            </Tooltip>
+            <Tooltip title={isPending ? 'Từ chối làm thêm giờ' : 'Đơn đã được xử lý'}>
+              <span>
+                <Button 
+                  danger 
+                  size="small" 
+                  disabled={!isPending}
+                  onClick={() => handleApprove(r.id, 'REJECTED')}
+                >
+                  Từ chối
+                </Button>
+              </span>
+            </Tooltip>
+          </Space>
         );
       }
     }
@@ -141,9 +166,9 @@ const OvertimePage = () => {
   return (
     <Card>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <Title level={4} style={{ margin: 0 }}>Tăng ca (OT)</Title>
+        <Title level={4} style={{ margin: 0 }}>Làm thêm giờ (Tăng ca)</Title>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => setIsModalOpen(true)}>
-          Đăng ký OT
+          Đăng ký làm thêm giờ
         </Button>
       </div>
 
@@ -167,7 +192,7 @@ const OvertimePage = () => {
       </Tabs>
 
       <Modal
-        title="Đăng ký làm thêm giờ (OT)"
+        title="Đăng ký làm thêm giờ"
         open={isModalOpen}
         onCancel={() => setIsModalOpen(false)}
         footer={null}
@@ -176,7 +201,7 @@ const OvertimePage = () => {
         <Form form={form} layout="vertical" onFinish={handleSubmit}>
           <Form.Item 
             name="date" 
-            label="Ngày OT" 
+            label="Ngày làm thêm giờ" 
             rules={[{ required: true, message: 'Vui lòng chọn ngày!' }]}
           >
             <DatePicker style={{ width: '100%' }} format="DD/MM/YYYY" />

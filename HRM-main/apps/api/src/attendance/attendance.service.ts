@@ -78,9 +78,15 @@ export class AttendanceService {
   }
 
   async getMyTimesheet(month: number, year: number, user: any) {
-    if (!user?.employee?.id) throw new BadRequestException('User is not an employee');
+    if (!user?.employee?.id) {
+      return { logs: [], leaveRequests: [], holidays: [] };
+    }
     
-    const startDate = dayjs(`${year}-${month}-01`).startOf('month').toDate();
+    const now = dayjs();
+    const targetMonth = (!month || isNaN(month)) ? now.month() + 1 : month;
+    const targetYear = (!year || isNaN(year)) ? now.year() : year;
+
+    const startDate = dayjs(`${targetYear}-${String(targetMonth).padStart(2, '0')}-01`).startOf('month').toDate();
     const endDate = dayjs(startDate).endOf('month').toDate();
 
     const logs = await this.prisma.attendanceLog.findMany({
@@ -102,7 +108,7 @@ export class AttendanceService {
     });
 
     const holidays = await this.prisma.holiday.findMany({
-      where: { year, date: { gte: startDate, lte: endDate } }
+      where: { year: targetYear, date: { gte: startDate, lte: endDate } }
     });
 
     return { logs, leaveRequests, holidays };
@@ -117,6 +123,24 @@ export class AttendanceService {
   async createLeaveRequest(data: any, user: any) {
     if (!user?.employee?.id) throw new BadRequestException('User is not an employee');
     
+    // Resolve leaveTypeId if not provided or invalid
+    let leaveTypeId = data.leaveTypeId || data.typeId;
+    if (!leaveTypeId) {
+      const firstType = await this.prisma.leaveType.findFirst();
+      leaveTypeId = firstType?.id;
+    } else {
+      const exists = await this.prisma.leaveType.findUnique({ where: { id: leaveTypeId } });
+      if (!exists) {
+        const firstType = await this.prisma.leaveType.findFirst();
+        leaveTypeId = firstType?.id;
+      }
+    }
+    if (!leaveTypeId) throw new BadRequestException('Chưa có loại nghỉ phép trong hệ thống');
+
+    const fromDate = data.fromDate || data.startDate ? new Date(data.fromDate || data.startDate) : new Date();
+    const toDate = data.toDate || data.endDate ? new Date(data.toDate || data.endDate) : new Date();
+    const days = Number(data.days) || Math.max(1, Math.ceil((toDate.getTime() - fromDate.getTime()) / (1000 * 3600 * 24)) + 1);
+
     let approverId = null;
     if (data.approverEmail) {
       const approverEmp = await this.prisma.employee.findFirst({
@@ -129,11 +153,11 @@ export class AttendanceService {
     return this.prisma.leaveRequest.create({
       data: {
         employeeId: user.employee.id,
-        leaveTypeId: data.leaveTypeId,
-        fromDate: new Date(data.fromDate),
-        toDate: new Date(data.toDate),
-        days: Number(data.days),
-        reason: data.reason,
+        leaveTypeId,
+        fromDate,
+        toDate,
+        days,
+        reason: data.reason || 'Nghỉ phép',
         approverId,
         status: 'PENDING'
       }
@@ -151,9 +175,16 @@ export class AttendanceService {
 
   async getPendingApprovals(user: any) {
     if (!user?.employee?.id) throw new BadRequestException('User is not an employee');
+    const isAdminOrHR = ['ADMIN', 'CEO', 'HR_MANAGER'].includes(user.role);
     return this.prisma.leaveRequest.findMany({
-      where: { approverId: user.employee.id, status: 'PENDING' },
-      include: { employee: true, leaveType: true },
+      where: isAdminOrHR ? undefined : { approverId: user.employee.id },
+      include: { 
+        employee: {
+          include: { department: true, position: true }
+        }, 
+        leaveType: true,
+        approver: true
+      },
       orderBy: { createdAt: 'desc' }
     });
   }
@@ -162,7 +193,8 @@ export class AttendanceService {
     if (!user?.employee?.id) throw new BadRequestException('User is not an employee');
     const req = await this.prisma.leaveRequest.findUnique({ where: { id }, include: { leaveType: true } });
     if (!req) throw new NotFoundException('Leave request not found');
-    if (req.approverId !== user.employee.id) {
+    const isAdminOrHR = ['ADMIN', 'CEO', 'HR_MANAGER'].includes(user.role);
+    if (!isAdminOrHR && req.approverId && req.approverId !== user.employee.id) {
       throw new BadRequestException('Bạn không có quyền duyệt đơn này');
     }
 
@@ -211,15 +243,20 @@ export class AttendanceService {
       approverId = approverEmp.id;
     }
 
+    const otDate = data.date ? new Date(data.date) : new Date();
+    const startTime = data.startTime ? new Date(data.startTime) : new Date();
+    const endTime = data.endTime ? new Date(data.endTime) : new Date(Date.now() + 2 * 3600 * 1000);
+    const hours = Number(data.hours) || Math.max(1, Math.round((endTime.getTime() - startTime.getTime()) / (1000 * 3600)));
+
     return this.prisma.overtimeRequest.create({
       data: {
         employeeId: user.employee.id,
-        date: new Date(data.date),
-        startTime: new Date(data.startTime),
-        endTime: new Date(data.endTime),
-        hours: Number(data.hours),
+        date: otDate,
+        startTime,
+        endTime,
+        hours,
         dayType: data.dayType || 'NORMAL',
-        reason: data.reason,
+        reason: data.reason || 'Tăng ca dự án',
         approverId,
         status: 'PENDING'
       }

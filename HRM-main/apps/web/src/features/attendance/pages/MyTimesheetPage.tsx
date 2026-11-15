@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Card, Typography, Button, Space, message, Calendar, Badge, Select, Row, Col, Statistic, Tag } from 'antd';
-import { ClockCircleOutlined, CheckCircleOutlined, ExportOutlined } from '@ant-design/icons';
+import { ClockCircleOutlined, CheckCircleOutlined, ExportOutlined, CalendarOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import isSameOrAfter from 'dayjs/plugin/isSameOrAfter';
 import isSameOrBefore from 'dayjs/plugin/isSameOrBefore';
@@ -25,9 +25,9 @@ const MyTimesheetPage: React.FC = () => {
     try {
       setLoading(true);
       const res = await apiClient.get('/attendance/my-timesheet', { params: { month, year } });
-      setLogs(res.data.logs);
-      setLeaveRequests(res.data.leaveRequests);
-      setHolidays(res.data.holidays);
+      setLogs(res.data.logs || []);
+      setLeaveRequests(res.data.leaveRequests || []);
+      setHolidays(res.data.holidays || []);
     } catch (err) {
       console.error(err);
       message.error('Lỗi khi tải bảng công');
@@ -135,28 +135,50 @@ const MyTimesheetPage: React.FC = () => {
     setCurrentYear(value.year());
   };
 
-  const totalLate = logs.filter(l => l.lateMinutes > 0).length;
   const totalWorked = logs.length;
+
+  const paidLeaveCount = useMemo(() => {
+    return leaveRequests.filter(l => {
+      const name = (l.leaveType?.name || '').toLowerCase();
+      return l.status === 'APPROVED' && !name.includes('không lương') && !name.includes('thai sản') && !name.includes('ốm');
+    }).reduce((s, l) => s + (l.days || 1), 0);
+  }, [leaveRequests]);
+
+  const unpaidLeaveCount = useMemo(() => {
+    return leaveRequests.filter(l => {
+      const name = (l.leaveType?.name || '').toLowerCase();
+      return l.status === 'APPROVED' && (name.includes('không lương') || !l.leaveType?.isPaid);
+    }).reduce((s, l) => s + (l.days || 1), 0);
+  }, [leaveRequests]);
+
+  const regimeLeaveCount = useMemo(() => {
+    return leaveRequests.filter(l => {
+      const name = (l.leaveType?.name || '').toLowerCase();
+      return l.status === 'APPROVED' && (name.includes('thai sản') || name.includes('ốm') || name.includes('việc riêng'));
+    }).reduce((s, l) => s + (l.days || 1), 0);
+  }, [leaveRequests]);
+
+  const remainingAnnualLeave = Math.max(0, 12 - paidLeaveCount);
 
   return (
     <div style={{ padding: '24px' }}>
-      <Row gutter={24}>
+      <Row gutter={24} style={{ marginBottom: 24 }}>
         <Col span={8}>
           <Card 
             title="Check-in / Check-out hôm nay" 
             style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.06)', height: '100%' }}
           >
-            <div style={{ textAlign: 'center', padding: '20px 0' }}>
+            <div style={{ textAlign: 'center', padding: '16px 0' }}>
               <Title level={2} style={{ color: '#1677ff', margin: 0 }}>{dayjs().format('HH:mm')}</Title>
               <Text type="secondary">{dayjs().format('DD/MM/YYYY - dddd')}</Text>
               
-              <div style={{ marginTop: 32 }}>
+              <div style={{ marginTop: 24 }}>
                 <Space size="large">
                   <Button 
                     type="primary" 
                     size="large" 
                     icon={<CheckCircleOutlined />}
-                    style={{ background: '#52c41a', width: 120, height: 48 }}
+                    style={{ background: '#52c41a', width: 120, height: 46 }}
                     onClick={handleCheckIn}
                   >
                     Check-in
@@ -164,7 +186,7 @@ const MyTimesheetPage: React.FC = () => {
                   <Button 
                     size="large" 
                     icon={<ExportOutlined />}
-                    style={{ width: 120, height: 48 }}
+                    style={{ width: 120, height: 46 }}
                     onClick={handleCheckOut}
                   >
                     Check-out
@@ -176,23 +198,87 @@ const MyTimesheetPage: React.FC = () => {
         </Col>
         
         <Col span={16}>
-          <Card style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.06)', height: '100%' }}>
-            <Row gutter={16}>
+          <Card 
+            title={
+              <Space>
+                <CalendarOutlined style={{ color: '#1677ff' }} />
+                <span style={{ fontSize: 15, fontWeight: 700, color: '#1e3a8a' }}>
+                  Tổng hợp Ngày công & Nghỉ phép Tháng {currentMonth}/{currentYear}
+                </span>
+              </Space>
+            } 
+            style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}
+          >
+            <Row gutter={[12, 12]}>
               <Col span={8}>
-                <Statistic title="Tổng ngày công (tháng)" value={totalWorked} prefix={<CheckCircleOutlined style={{ color: '#1677ff' }} />} />
+                <Card size="small" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 6 }}>
+                  <Statistic 
+                    title={<Text style={{ fontSize: 12, color: '#166534' }}>Chấm công thực tế</Text>} 
+                    value={totalWorked} 
+                    suffix="ngày"
+                    valueStyle={{ color: '#16a34a', fontWeight: 700, fontSize: 18 }}
+                    prefix={<CheckCircleOutlined style={{ color: '#16a34a' }} />} 
+                  />
+                </Card>
               </Col>
               <Col span={8}>
-                <Statistic title="Số lần đi muộn" value={totalLate} valueStyle={{ color: '#cf1322' }} prefix={<ClockCircleOutlined />} />
+                <Card size="small" style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 6 }}>
+                  <Statistic 
+                    title={<Text style={{ fontSize: 12, color: '#1e40af' }}>Nghỉ có phép</Text>} 
+                    value={paidLeaveCount} 
+                    suffix="ngày"
+                    valueStyle={{ color: '#2563eb', fontWeight: 700, fontSize: 18 }}
+                    prefix={<CalendarOutlined style={{ color: '#2563eb' }} />} 
+                  />
+                </Card>
               </Col>
               <Col span={8}>
-                <Statistic title="Nghỉ phép" value={leaveRequests.length} prefix={<Badge status="processing" />} />
+                <Card size="small" style={{ background: '#fff1f0', border: '1px solid #ffccc7', borderRadius: 6 }}>
+                  <Statistic 
+                    title={<Text style={{ fontSize: 12, color: '#cf1322' }}>Nghỉ lễ tết</Text>} 
+                    value={holidays.length} 
+                    suffix="ngày"
+                    valueStyle={{ color: '#cf1322', fontWeight: 700, fontSize: 18 }}
+                    prefix={<CalendarOutlined style={{ color: '#cf1322' }} />} 
+                  />
+                </Card>
+              </Col>
+              <Col span={8}>
+                <Card size="small" style={{ background: '#faf5ff', border: '1px solid #e9d5ff', borderRadius: 6 }}>
+                  <Statistic 
+                    title={<Text style={{ fontSize: 12, color: '#7e22ce' }}>Nghỉ chế độ</Text>} 
+                    value={regimeLeaveCount} 
+                    suffix="ngày"
+                    valueStyle={{ color: '#9333ea', fontWeight: 700, fontSize: 18 }}
+                  />
+                </Card>
+              </Col>
+              <Col span={8}>
+                <Card size="small" style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: 6 }}>
+                  <Statistic 
+                    title={<Text style={{ fontSize: 12, color: '#475569' }}>Nghỉ không phép</Text>} 
+                    value={unpaidLeaveCount} 
+                    suffix="ngày"
+                    valueStyle={{ color: '#64748b', fontWeight: 700, fontSize: 18 }}
+                  />
+                </Card>
+              </Col>
+              <Col span={8}>
+                <Card size="small" style={{ background: '#ecfdf5', border: '2px solid #22c55e', borderRadius: 6 }}>
+                  <Statistic 
+                    title={<Text strong style={{ fontSize: 12, color: '#15803d' }}>Phép năm còn lại</Text>} 
+                    value={remainingAnnualLeave} 
+                    suffix="/ 12 ngày"
+                    valueStyle={{ color: '#15803d', fontWeight: 800, fontSize: 18 }}
+                  />
+                </Card>
               </Col>
             </Row>
           </Card>
         </Col>
       </Row>
 
-      <Card style={{ marginTop: 24, borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+      <Card style={{ borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
         <Calendar 
           cellRender={cellRender} 
           onPanelChange={onPanelChange} 

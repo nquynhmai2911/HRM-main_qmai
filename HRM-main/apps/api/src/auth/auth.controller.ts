@@ -52,4 +52,18 @@ export class AuthController {
   async logout(@GetUser() user: any) {
     return this.authService.logout(user.id);
   }
+
+  @Post('change-password')
+  @ApiOperation({
+    summary: 'CHANGE PASSWORD',
+  })
+  @ApiBearerAuth()
+  @Auth()
+  async changePassword(
+    @GetUser() user: any,
+    @Body() body: { oldPassword?: string; currentPassword?: string; newPassword: string }
+  ) {
+    const oldPass = body.oldPassword || body.currentPassword || '';
+    return this.authService.changePassword(user.id, oldPass, body.newPassword);
+  }
 }

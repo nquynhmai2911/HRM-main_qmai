@@ -9,9 +9,9 @@ export class CreateRequisitionDto {
   @IsString()
   departmentId: string;
 
-  @IsNotEmpty()
+  @IsOptional()
   @IsString()
-  positionId: string;
+  positionId?: string;
 
   @IsOptional()
   @IsString()

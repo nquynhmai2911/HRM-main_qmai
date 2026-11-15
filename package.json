@@ -1,0 +1,10 @@
+{
+  "name": "dts-hrm",
+  "version": "1.0.0",
+  "description": "DTS-HRM System Starter",
+  "scripts": {
+    "dev": "node start-all.js",
+    "start": "node start-all.js",
+    "stop": "node stop-all.js"
+  }
+}

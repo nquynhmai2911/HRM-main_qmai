@@ -12,7 +12,7 @@ export async function bootstrap() {
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
-      forbidNonWhitelisted: true,
+      forbidNonWhitelisted: false,
     })
   );
 
@@ -32,8 +32,26 @@ export async function bootstrap() {
 
   //Enable CORS
   app.enableCors();
+  app.enableShutdownHooks();
 
-  await app.listen(3000);
-  Logger.log(`App running on Port 3000`);
+  let retries = 5;
+  while (retries > 0) {
+    try {
+      const port = process.env.PORT || 3002;
+      await app.listen(port);
+      Logger.log(`App running on Port ${port}`);
+      break;
+    } catch (err: any) {
+      const port = process.env.PORT || 3002;
+      if (err.code === 'EADDRINUSE' && retries > 1) {
+        Logger.warn(`Cổng ${port} đang bận, thử lại sau 1.5 giây... (còn ${retries - 1} lần thử)`);
+        await new Promise((r) => setTimeout(r, 1500));
+        retries--;
+      } else {
+        throw err;
+      }
+    }
+  }
 }
 bootstrap();
+

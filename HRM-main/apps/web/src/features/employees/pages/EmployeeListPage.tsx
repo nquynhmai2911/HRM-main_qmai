@@ -7,7 +7,8 @@ import {
 import { 
   PlusOutlined, EditOutlined, DeleteOutlined, TeamOutlined, 
   CheckCircleOutlined, ClockCircleOutlined, UserOutlined, 
-  SearchOutlined, EyeOutlined, AuditOutlined, PhoneOutlined, MailOutlined
+  SearchOutlined, EyeOutlined, AuditOutlined, PhoneOutlined, MailOutlined,
+  FileExcelOutlined, ReloadOutlined
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
@@ -58,6 +59,39 @@ const EmployeeListPage: React.FC = () => {
     }
   };
 
+  const exportToExcel = () => {
+    try {
+      const headers = ['STT', 'Mã NV', 'Họ và tên', 'Giới tính', 'Email', 'SĐT', 'Phòng ban', 'Chức vụ', 'Mức lương (VNĐ)', 'Ngày vào làm', 'Trạng thái'];
+      const rows = filteredEmployees.map((e: any, idx: number) => [
+        idx + 1,
+        e.employeeCode || '',
+        `"${(e.fullName || '').replace(/"/g, '""')}"`,
+        e.gender === 'FEMALE' ? 'Nữ' : e.gender === 'MALE' ? 'Nam' : 'Khác',
+        e.workEmail || e.personalEmail || '',
+        `"${e.phone || ''}"`,
+        `"${(e.department?.name || '').replace(/"/g, '""')}"`,
+        `"${(e.position?.name || '').replace(/"/g, '""')}"`,
+        e.contracts?.[0]?.baseSalary || 0,
+        e.joinDate ? dayjs(e.joinDate).format('DD/MM/YYYY') : '',
+        e.status === 'ACTIVE' ? 'Chính thức' : e.status === 'PROBATION' ? 'Thử việc' : e.status === 'ONBOARDING' ? 'Tiếp nhận' : 'Đã nghỉ'
+      ]);
+
+      const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\r\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Danh_sach_nhan_vien_${dayjs().format('YYYYMMDD_HHmm')}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      message.success('Đã xuất danh sách nhân sự ra file Excel (.csv) thành công!');
+    } catch {
+      message.error('Lỗi khi xuất file Excel');
+    }
+  };
+
   const filteredEmployees = employees.filter((emp) => {
     const matchesSearch = 
       !searchText ||
@@ -92,53 +126,154 @@ const EmployeeListPage: React.FC = () => {
 
   const columns = [
     {
-      title: 'Mã NV & Họ tên',
-      key: 'employee',
-      render: (record: any) => (
-        <div>
-          <div style={{ fontWeight: 600, color: '#1e3a8a', fontSize: 14 }}>
-            {record.fullName}
-          </div>
-          <Space size={6} style={{ marginTop: 2 }}>
-            <Tag color="blue" style={{ fontSize: 11 }}>{record.employeeCode}</Tag>
-            {record.gender === 'FEMALE' ? <Tag color="magenta">Nữ</Tag> : <Tag color="geekblue">Nam</Tag>}
-          </Space>
-        </div>
+      title: 'Mã NV',
+      dataIndex: 'employeeCode',
+      key: 'employeeCode',
+      width: 105,
+      fixed: 'left' as const,
+      render: (code: string) => (
+        <Tag
+          color="blue"
+          style={{
+            fontFamily: 'monospace',
+            fontWeight: 700,
+            fontSize: 12,
+            borderRadius: 4,
+            padding: '1px 8px',
+          }}
+        >
+          {code}
+        </Tag>
       ),
     },
     {
-      title: 'Liên hệ',
-      key: 'contact',
-      render: (record: any) => (
-        <div style={{ fontSize: 12 }}>
-          <div><MailOutlined style={{ marginRight: 5, color: '#64748b' }} />{record.workEmail}</div>
-          {record.phone && (
-            <div style={{ color: '#64748b', marginTop: 2 }}>
-              <PhoneOutlined style={{ marginRight: 5 }} />{record.phone}
-            </div>
+      title: 'Họ và tên',
+      dataIndex: 'fullName',
+      key: 'fullName',
+      width: 175,
+      fixed: 'left' as const,
+      render: (name: string, record: any) => (
+        <span
+          style={{
+            fontWeight: 600,
+            color: '#0f172a',
+            fontSize: 13.5,
+            cursor: 'pointer',
+          }}
+          onClick={() => {
+            setSelectedEmp(record);
+            setIsDetailModalVisible(true);
+          }}
+        >
+          {name}
+        </span>
+      ),
+    },
+    {
+      title: 'Ngày sinh',
+      dataIndex: 'dob',
+      key: 'dob',
+      width: 115,
+      align: 'center' as const,
+      render: (date: any) => (
+        <span style={{ fontSize: 13, color: '#475569' }}>
+          {date ? dayjs(date).format('DD/MM/YYYY') : <span style={{ color: '#94a3b8' }}>-</span>}
+        </span>
+      ),
+    },
+    {
+      title: 'Giới tính',
+      dataIndex: 'gender',
+      key: 'gender',
+      width: 95,
+      align: 'center' as const,
+      render: (gender: string) => {
+        if (gender === 'FEMALE') {
+          return (
+            <Tag color="magenta" bordered={false} style={{ fontWeight: 600, fontSize: 11.5, borderRadius: 4 }}>
+              Nữ
+            </Tag>
+          );
+        }
+        if (gender === 'MALE') {
+          return (
+            <Tag color="geekblue" bordered={false} style={{ fontWeight: 600, fontSize: 11.5, borderRadius: 4 }}>
+              Nam
+            </Tag>
+          );
+        }
+        return <Tag bordered={false}>Khác</Tag>;
+      },
+    },
+    {
+      title: 'Email',
+      key: 'email',
+      width: 205,
+      render: (record: any) => {
+        const email = record.workEmail || record.personalEmail;
+        if (!email) return <span style={{ color: '#94a3b8' }}>-</span>;
+        return (
+          <span style={{ fontSize: 12.5, color: '#334155' }}>
+            <MailOutlined style={{ marginRight: 6, color: '#94a3b8' }} />
+            {email}
+          </span>
+        );
+      },
+    },
+    {
+      title: 'SĐT',
+      dataIndex: 'phone',
+      key: 'phone',
+      width: 135,
+      align: 'center' as const,
+      render: (phone: string) => (
+        <span style={{ fontSize: 12.5, color: '#334155', fontFamily: 'monospace' }}>
+          {phone ? (
+            <>
+              <PhoneOutlined style={{ marginRight: 5, color: '#94a3b8' }} />
+              {phone}
+            </>
+          ) : (
+            <span style={{ color: '#94a3b8' }}>-</span>
           )}
-        </div>
+        </span>
       ),
     },
     {
-      title: 'Phòng ban & Chức danh',
+      title: 'Phòng ban',
+      key: 'department',
+      width: 185,
+      render: (record: any) => {
+        const deptName = record.department?.name;
+        if (!deptName) return <span style={{ color: '#94a3b8' }}>-</span>;
+        return (
+          <Tag color="cyan" style={{ borderRadius: 4, fontWeight: 500, fontSize: 12, padding: '2px 8px' }}>
+            {deptName}
+          </Tag>
+        );
+      },
+    },
+    {
+      title: 'Chức vụ',
       key: 'position',
+      width: 175,
       render: (record: any) => (
-        <div>
-          <div style={{ fontWeight: 500 }}>{record.position?.name || 'N/A'}</div>
-          <Text type="secondary" style={{ fontSize: 12 }}>{record.department?.name || 'N/A'}</Text>
-        </div>
+        <span style={{ fontWeight: 600, color: '#1e293b', fontSize: 13 }}>
+          {record.position?.name || <span style={{ color: '#94a3b8', fontWeight: 400 }}>-</span>}
+        </span>
       ),
     },
     {
-      title: 'Hợp đồng hiện tại',
-      key: 'contract',
+      title: 'Loại hợp đồng',
+      key: 'contractType',
+      width: 165,
+      align: 'center' as const,
       render: (record: any) => {
         const contract = record.contracts?.[0];
         if (!contract) return <Text type="secondary" style={{ fontSize: 12 }}>Chưa có HĐ</Text>;
-        
-        let typeName = 'HĐLĐ';
-        let color = 'cyan';
+
+        let typeName = 'HĐ Lao động';
+        let color = 'default';
         if (contract.type === 'PROBATION') {
           typeName = `Thử việc (${contract.probationSalaryPercent || 85}%)`;
           color = 'orange';
@@ -151,12 +286,31 @@ const EmployeeListPage: React.FC = () => {
         }
 
         return (
-          <div>
-            <Tag color={color}>{typeName}</Tag>
-            <div style={{ fontSize: 12, color: '#16a34a', fontWeight: 600, marginTop: 2 }}>
-              {contract.baseSalary ? `${contract.baseSalary.toLocaleString()} VNĐ` : ''}
-            </div>
-          </div>
+          <Tag color={color} bordered={false} style={{ fontWeight: 600, fontSize: 11.5, borderRadius: 4 }}>
+            {typeName}
+          </Tag>
+        );
+      },
+    },
+    {
+      title: 'Mức lương',
+      key: 'salary',
+      width: 145,
+      align: 'right' as const,
+      render: (record: any) => {
+        const contract = record.contracts?.[0];
+        if (!contract?.baseSalary) return <span style={{ color: '#94a3b8' }}>-</span>;
+        return (
+          <span
+            style={{
+              color: '#059669',
+              fontWeight: 700,
+              fontSize: 13,
+              fontFamily: 'monospace',
+            }}
+          >
+            {contract.baseSalary.toLocaleString('vi-VN')} đ
+          </span>
         );
       },
     },
@@ -164,57 +318,80 @@ const EmployeeListPage: React.FC = () => {
       title: 'Ngày vào làm',
       dataIndex: 'joinDate',
       key: 'joinDate',
-      render: (date: any) => date ? dayjs(date).format('DD/MM/YYYY') : 'Chưa xác định',
+      width: 125,
+      align: 'center' as const,
+      render: (date: any) => (
+        <span style={{ fontSize: 13, color: '#475569' }}>
+          {date ? dayjs(date).format('DD/MM/YYYY') : <span style={{ color: '#94a3b8' }}>Chưa rõ</span>}
+        </span>
+      ),
     },
     {
       title: 'Trạng thái',
       dataIndex: 'status',
       key: 'status',
+      width: 130,
+      align: 'center' as const,
       render: (status: string) => renderStatusTag(status),
     },
     {
       title: 'Hành động',
       key: 'action',
-      render: (record: any) => (
-        <Space size="small">
-          <Tooltip title="Xem thông tin chi tiết">
-            <Button 
-              type="text" 
-              icon={<EyeOutlined />} 
-              onClick={() => {
-                setSelectedEmp(record);
-                setIsDetailModalVisible(true);
-              }} 
-            />
-          </Tooltip>
-          {record.status === 'PROBATION' && (
-            <Tooltip title="Đến màn Đánh giá Thử việc">
+      width: 150,
+      fixed: 'right' as const,
+      align: 'center' as const,
+      render: (record: any) => {
+        const isProbation = record.status === 'PROBATION';
+        return (
+          <Space size={4} wrap={false} style={{ justifyContent: 'center' }}>
+            <Tooltip title="Xem thông tin chi tiết">
               <Button 
-                type="text" 
-                icon={<AuditOutlined />} 
-                style={{ color: '#d97706' }}
-                onClick={() => navigate('/contracts/probation')}
+                type="text"
+                size="small"
+                icon={<EyeOutlined style={{ color: '#1677ff' }} />} 
+                onClick={() => {
+                  setSelectedEmp(record);
+                  setIsDetailModalVisible(true);
+                }} 
               />
             </Tooltip>
-          )}
-          <PermissionGate resource="employee" action="update">
-            <Button 
-              type="text" 
-              icon={<EditOutlined />} 
-              style={{ color: '#1677ff' }} 
-              onClick={() => {
-                setEditingEmployee(record);
-                setIsFormModalVisible(true);
-              }}
-            />
-          </PermissionGate>
-          <PermissionGate resource="employee" action="delete">
-            <Popconfirm title="Bạn có chắc chắn muốn xoá nhân viên này?" onConfirm={() => handleDelete(record.id)}>
-              <Button type="text" danger icon={<DeleteOutlined />} />
-            </Popconfirm>
-          </PermissionGate>
-        </Space>
-      ),
+            
+            <Tooltip title={isProbation ? 'Đến màn Đánh giá Thử việc' : 'Nhân viên không trong diện thử việc'}>
+              <span>
+                <Button 
+                  type="text" 
+                  size="small"
+                  disabled={!isProbation}
+                  icon={<AuditOutlined style={{ color: isProbation ? '#d97706' : undefined }} />} 
+                  onClick={() => navigate('/contracts/probation')}
+                />
+              </span>
+            </Tooltip>
+
+            <PermissionGate resource="employee" action="update">
+              <Tooltip title="Chỉnh sửa thông tin nhân viên">
+                <Button 
+                  type="text" 
+                  size="small"
+                  icon={<EditOutlined style={{ color: '#1677ff' }} />} 
+                  onClick={() => {
+                    setEditingEmployee(record);
+                    setIsFormModalVisible(true);
+                  }}
+                />
+              </Tooltip>
+            </PermissionGate>
+
+            <PermissionGate resource="employee" action="delete">
+              <Popconfirm title="Bạn có chắc chắn muốn xoá nhân viên này?" onConfirm={() => handleDelete(record.id)}>
+                <Tooltip title="Xoá nhân viên">
+                  <Button type="text" size="small" danger icon={<DeleteOutlined />} />
+                </Tooltip>
+              </Popconfirm>
+            </PermissionGate>
+          </Space>
+        );
+      },
     },
   ];
 
@@ -318,9 +495,24 @@ const EmployeeListPage: React.FC = () => {
             />
           </Space>
 
-          <Button onClick={fetchEmployees}>
-            Làm mới danh sách
-          </Button>
+          <Space size={10}>
+            <Button
+              icon={<FileExcelOutlined />}
+              style={{
+                background: '#107c41',
+                color: '#fff',
+                borderColor: '#107c41',
+                fontWeight: 600,
+                borderRadius: 6
+              }}
+              onClick={exportToExcel}
+            >
+              Xuất file Excel (.csv)
+            </Button>
+            <Button icon={<ReloadOutlined />} onClick={fetchEmployees} style={{ borderRadius: 6 }}>
+              Làm mới danh sách
+            </Button>
+          </Space>
         </div>
 
         <Table 
@@ -328,7 +520,13 @@ const EmployeeListPage: React.FC = () => {
           columns={columns} 
           rowKey="id"
           loading={loading}
-          pagination={{ pageSize: 10, showTotal: (total) => `Tổng cộng ${total} nhân viên` }}
+          scroll={{ x: 2000 }}
+          pagination={{ 
+            pageSize: 10, 
+            showSizeChanger: true,
+            pageSizeOptions: ['10', '20', '50', '100'],
+            showTotal: (total) => `Tổng cộng ${total} nhân viên` 
+          }}
         />
       </Card>
 

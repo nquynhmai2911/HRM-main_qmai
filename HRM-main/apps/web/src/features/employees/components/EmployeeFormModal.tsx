@@ -99,7 +99,11 @@ const EmployeeFormModal: React.FC<EmployeeFormModalProps> = ({ visible, onCancel
       okText="Lưu lại"
       cancelText="Hủy"
     >
-      <Form form={form} layout="vertical">
+      <Form 
+        form={form} 
+        layout="vertical"
+        initialValues={{ createUser: true, role: 'EMPLOYEE', gender: 'MALE', status: 'ACTIVE' }}
+      >
         <Row gutter={16}>
           <Col span={12}>
             <Form.Item name="fullName" label="Họ và tên" rules={[{ required: true }]}>
@@ -190,7 +194,7 @@ const EmployeeFormModal: React.FC<EmployeeFormModalProps> = ({ visible, onCancel
             <Divider orientation="left">Tài khoản truy cập hệ thống</Divider>
           </Col>
           <Col span={12}>
-            <Form.Item name="createUser" valuePropName="checked" label="Cấp tài khoản đăng nhập">
+            <Form.Item name="createUser" valuePropName="checked" label="Cấp tài khoản đăng nhập" initialValue={true}>
               <Switch />
             </Form.Item>
             <div style={{ marginTop: -15, fontSize: 12, color: '#6b7280' }}>
@@ -207,7 +211,8 @@ const EmployeeFormModal: React.FC<EmployeeFormModalProps> = ({ visible, onCancel
               <Select>
                 <Option value="EMPLOYEE">Nhân viên (Chấm công, Xem bảng công, Xin nghỉ)</Option>
                 <Option value="MANAGER">Quản lý (Duyệt đơn, Tuyển dụng)</Option>
-                <Option value="HR_STAFF">Nhân sự (Quản lý hồ sơ, Hợp đồng)</Option>
+                <Option value="HR_STAFF">Nhân sự (Quản lý hồ sơ, Hợp đồng, Tuyển dụng)</Option>
+                <Option value="HR_MANAGER">Trưởng phòng Nhân sự (Quản lý & Phê duyệt NS)</Option>
                 <Option value="ADMIN">Quản trị viên (Toàn quyền)</Option>
               </Select>
             </Form.Item>

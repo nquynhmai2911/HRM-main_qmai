@@ -52,32 +52,32 @@ export class AttendanceController {
   }
 
   @Post('leave/approve/:id')
-  @Auth('MANAGER', 'HR_MANAGER', 'CEO', 'ADMIN')
+  @Auth('MANAGER', 'HR_MANAGER', 'HR_STAFF', 'CEO', 'ADMIN')
   approveLeave(@Param('id') id: string, @Body('decision') decision: 'APPROVED' | 'REJECTED', @GetUser() user: any) {
     return this.attendanceService.approveLeave(id, decision, user);
   }
 
   // OVERTIME
-  @Post('overtime/request')
+  @Post(['attendance/overtime/request', 'overtime/request'])
   @Auth()
   createOvertimeRequest(@Body() data: any, @GetUser() user: any) {
     return this.attendanceService.createOvertimeRequest(data, user);
   }
 
-  @Get('overtime/my-requests')
+  @Get(['attendance/overtime/my-requests', 'overtime/my-requests'])
   @Auth()
   getMyOvertimeRequests(@GetUser() user: any) {
     return this.attendanceService.getMyOvertimeRequests(user);
   }
 
-  @Get('overtime/approvals')
+  @Get(['attendance/overtime/approvals', 'overtime/approvals'])
   @Auth()
   getPendingOvertimeApprovals(@GetUser() user: any) {
     return this.attendanceService.getPendingOvertimeApprovals(user);
   }
 
-  @Post('overtime/approve/:id')
-  @Auth('MANAGER', 'HR_MANAGER', 'CEO', 'ADMIN')
+  @Post(['attendance/overtime/approve/:id', 'overtime/approve/:id'])
+  @Auth('MANAGER', 'HR_MANAGER', 'HR_STAFF', 'CEO', 'ADMIN')
   approveOvertime(@Param('id') id: string, @Body('decision') decision: 'APPROVED' | 'REJECTED', @GetUser() user: any) {
     return this.attendanceService.approveOvertime(id, decision, user);
   }

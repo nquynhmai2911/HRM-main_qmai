@@ -1,10 +1,8 @@
 import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { Spin } from 'antd';
 import { useAuthStore } from '../lib/auth';
 import AppLayout from './AppLayout';
-
-// Lazy-loaded pages
+import PageLoader from '../components/PageLoader';
 const LoginPage = lazy(() => import('../features/auth/pages/LoginPage'));
 const DashboardPage = lazy(() => import('../features/dashboard/pages/DashboardPage'));
 const EmployeeListPage = lazy(() => import('../features/employees/pages/EmployeeListPage'));
@@ -26,14 +24,9 @@ const OvertimePage = lazy(() => import('../features/attendance/pages/OvertimePag
 const SettingsPage = lazy(() => import('../features/admin/pages/SettingsPage'));
 const UserListPage = lazy(() => import('../features/admin/pages/UserListPage'));
 const AuditLogPage = lazy(() => import('../features/admin/pages/AuditLogPage'));
+const ChangePasswordPage = lazy(() => import('../features/auth/pages/ChangePasswordPage'));
 const MyPayslipsPage = lazy(() => import('../features/payroll/pages/MyPayslipsPage'));
 const PayrollPeriodsPage = lazy(() => import('../features/payroll/pages/PayrollPeriodsPage'));
-
-const PageLoader = () => (
-  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh' }}>
-    <Spin size="large" tip="Đang tải..." />
-  </div>
-);
 
 // Protected route wrapper
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -56,80 +49,82 @@ const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 const AppRouter: React.FC = () => {
   return (
     <BrowserRouter>
-      <Suspense fallback={<PageLoader />}>
-        <Routes>
-          {/* Public routes */}
-          <Route
-            path="/login"
-            element={
-              <PublicRoute>
+      <Routes>
+        {/* Public routes */}
+        <Route
+          path="/login"
+          element={
+            <PublicRoute>
+              <Suspense fallback={<PageLoader />}>
                 <LoginPage />
-              </PublicRoute>
-            }
-          />
+              </Suspense>
+            </PublicRoute>
+          }
+        />
 
-          {/* Protected routes with layout */}
-          <Route
-            element={
-              <ProtectedRoute>
-                <AppLayout />
-              </ProtectedRoute>
-            }
-          >
-            <Route index element={<DashboardPage />} />
+        {/* Protected routes with layout */}
+        <Route
+          element={
+            <ProtectedRoute>
+              <AppLayout />
+            </ProtectedRoute>
+          }
+        >
+          <Route index element={<DashboardPage />} />
 
-            {/* Company Info */}
-            <Route path="/about-company" element={<AboutCompanyPage />} />
+          {/* Company Info */}
+          <Route path="/about-company" element={<AboutCompanyPage />} />
 
-            {/* Organization */}
-            <Route path="/organization/branches" element={<BranchListPage />} />
-            <Route path="/organization/departments" element={<DepartmentListPage />} />
-            <Route path="/organization/positions" element={<PositionListPage />} />
+          {/* Organization */}
+          <Route path="/organization/branches" element={<BranchListPage />} />
+          <Route path="/organization/departments" element={<DepartmentListPage />} />
+          <Route path="/organization/positions" element={<PositionListPage />} />
 
-            {/* Employees */}
-            <Route path="/employees" element={<EmployeeListPage />} />
-            <Route path="/employees/:id" element={<EmployeeDetailPage />} />
-            <Route path="/employees/performance" element={<PerformanceReviewPage />} />
-            
-            {/* User Profile */}
-            <Route path="/profile" element={<ProfilePage />} />
+          {/* Employees */}
+          <Route path="/employees" element={<Navigate to="/employees/list" replace />} />
+          <Route path="/employees/list" element={<EmployeeListPage />} />
+          <Route path="/employees/performance" element={<PerformanceReviewPage />} />
+          <Route path="/employees/:id" element={<EmployeeDetailPage />} />
+          
+          {/* User Profile */}
+          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/change-password" element={<ChangePasswordPage />} />
 
-            {/* Recruitment */}
-            <Route path="/recruitment" element={<Navigate to="/recruitment/requisitions" replace />} />
-            <Route path="/recruitment/requisitions" element={<RequisitionListPage />} />
-            <Route path="/recruitment/candidates" element={<Navigate to="/recruitment/requisitions" replace />} />
-            <Route path="/recruitment/pipeline" element={<Navigate to="/recruitment/requisitions" replace />} />
-            <Route path="/recruitment/pipeline/:id" element={<CandidatePipelinePage />} />
+          {/* Recruitment */}
+          <Route path="/recruitment" element={<Navigate to="/recruitment/requisitions" replace />} />
+          <Route path="/recruitment/requisitions" element={<RequisitionListPage />} />
+          <Route path="/recruitment/candidates" element={<Navigate to="/recruitment/requisitions" replace />} />
+          <Route path="/recruitment/pipeline" element={<Navigate to="/recruitment/requisitions" replace />} />
+          <Route path="/recruitment/pipeline/:id" element={<CandidatePipelinePage />} />
 
-            {/* Contracts */}
-            <Route path="/contracts/list" element={<ContractListPage />} />
-            <Route path="/contracts/probation" element={<ProbationListPage />} />
+          {/* Contracts */}
+          <Route path="/contracts" element={<Navigate to="/contracts/list" replace />} />
+          <Route path="/contracts/list" element={<ContractListPage />} />
+          <Route path="/contracts/probation" element={<ProbationListPage />} />
 
-            {/* Attendance */}
-            <Route path="/attendance/checkin" element={<MyTimesheetPage />} />
-            <Route path="/attendance/timesheet" element={<MyTimesheetPage />} />
-            <Route path="/attendance/leave" element={<LeaveRequestPage />} />
-            <Route path="/attendance/leave-approvals" element={<LeaveApprovalPage />} />
-            <Route path="/attendance/overtime" element={<OvertimePage />} />
+          {/* Attendance */}
+          <Route path="/attendance" element={<Navigate to="/attendance/timesheet" replace />} />
+          <Route path="/attendance/checkin" element={<MyTimesheetPage />} />
+          <Route path="/attendance/timesheet" element={<MyTimesheetPage />} />
+          <Route path="/attendance/leave" element={<LeaveRequestPage />} />
+          <Route path="/attendance/leave-approvals" element={<LeaveApprovalPage />} />
+          <Route path="/attendance/overtime" element={<OvertimePage />} />
 
-            {/* Payroll */}
-            <Route path="/payroll/periods" element={<PayrollPeriodsPage />} />
-            <Route path="/payroll/my-payslips" element={<MyPayslipsPage />} />
+          {/* Payroll */}
+          <Route path="/payroll" element={<Navigate to="/payroll/periods" replace />} />
+          <Route path="/payroll/periods" element={<PayrollPeriodsPage />} />
+          <Route path="/payroll/my-payslips" element={<MyPayslipsPage />} />
 
-            {/* Admin */}
-            <Route path="/admin/users" element={<UserListPage />} />
-            <Route path="/admin/audit-logs" element={<AuditLogPage />} />
-            <Route path="/admin/settings" element={<SettingsPage />} />
+          {/* Admin */}
+          <Route path="/admin" element={<Navigate to="/admin/users" replace />} />
+          <Route path="/admin/users" element={<UserListPage />} />
+          <Route path="/admin/audit-logs" element={<AuditLogPage />} />
+          <Route path="/admin/settings" element={<SettingsPage />} />
+        </Route>
 
-            {/* Profile */}
-            <Route path="/profile" element={<div>Thông tin cá nhân (coming soon)</div>} />
-            <Route path="/change-password" element={<div>Đổi mật khẩu (coming soon)</div>} />
-          </Route>
-
-          {/* Catch all */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </Suspense>
+        {/* Catch all */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
     </BrowserRouter>
   );
 };
