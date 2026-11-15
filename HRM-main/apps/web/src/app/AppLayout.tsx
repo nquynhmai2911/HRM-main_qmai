@@ -106,10 +106,11 @@ const rawMenuData: CustomMenuDataItem[] = [
   },
   {
     path: '/payroll',
-    name: 'Lương',
+    name: 'Lương & KPI',
     icon: <DollarOutlined />,
     children: [
       { path: '/payroll/periods', name: 'Kỳ lương' },
+      { path: '/payroll/kpi', name: 'Chỉ tiêu KPI & Doanh số', allowedRoles: ['ADMIN', 'HR_MANAGER', 'ACCOUNTANT', 'MANAGER'] },
       { path: '/payroll/my-payslips', name: 'Phiếu lương của tôi' },
     ],
   },
@@ -151,6 +152,7 @@ const getSelectedMenuKeys = (pathname: string): string[] => {
   if (pathname === '/organization/positions') return ['/organization/positions'];
   if (pathname.startsWith('/recruitment')) return ['/recruitment/requisitions'];
   if (pathname === '/attendance' || pathname === '/attendance/timesheet') return ['/attendance/timesheet'];
+  if (pathname === '/payroll/kpi' || pathname === '/kpi') return ['/payroll/kpi'];
   if (pathname === '/payroll' || pathname === '/payroll/periods') return ['/payroll/periods'];
   if (pathname === '/admin' || pathname === '/admin/users') return ['/admin/users'];
   return [pathname];
@@ -162,24 +164,6 @@ const AppLayout: React.FC = () => {
   const { user, logout } = useAuthStore();
   const [collapsed, setCollapsed] = useState(false);
   const [unreadCount, setUnreadCount] = useState(3);
-
-  const handleQuickSwitch = async (email: string) => {
-    try {
-      message.loading({ content: 'Đang chuyển đổi tài khoản...', key: 'quickSwitch' });
-      const { data } = await apiClient.post('/auth/login', { email, password: '123456' });
-      localStorage.setItem('accessToken', data.accessToken);
-      if (data.refreshToken) {
-        localStorage.setItem('refreshToken', data.refreshToken);
-      }
-      useAuthStore.getState().setAuth(data.user, data.accessToken, data.refreshToken || '');
-      message.success({ content: `Đã chuyển sang: ${ROLE_LABELS[data.user.role] || data.user.role}`, key: 'quickSwitch' });
-      setTimeout(() => {
-        window.location.reload();
-      }, 250);
-    } catch (err: any) {
-      message.error({ content: err?.response?.data?.message || 'Không thể chuyển đổi tài khoản', key: 'quickSwitch' });
-    }
-  };
 
   useEffect(() => {
     // Fetch user info on mount to ensure user is up to date
@@ -371,93 +355,6 @@ const AppLayout: React.FC = () => {
         ];
 
         return [
-          /* Quick Role Switcher for 1-Click Demo */
-          <div
-            key="quick-role-switcher"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-              background: '#f1f5f9',
-              padding: '3px 8px',
-              borderRadius: 20,
-              border: '1px solid #e2e8f0',
-              marginRight: 6
-            }}
-          >
-            <Text style={{ fontSize: 11, color: '#64748b', fontWeight: 600, paddingRight: 4 }}>
-              Demo:
-            </Text>
-            <Button
-              size="small"
-              type={user?.role === 'ADMIN' ? 'primary' : 'text'}
-              style={{
-                fontSize: 11,
-                height: 24,
-                padding: '0 8px',
-                borderRadius: 12,
-                fontWeight: user?.role === 'ADMIN' ? 700 : 500,
-                color: user?.role === 'ADMIN' ? '#fff' : '#475569',
-                background: user?.role === 'ADMIN' ? '#ef4444' : 'transparent',
-                borderColor: user?.role === 'ADMIN' ? '#ef4444' : 'transparent',
-              }}
-              onClick={() => handleQuickSwitch('admin@gmail.com')}
-            >
-              👑 Admin
-            </Button>
-            <Button
-              size="small"
-              type={user?.role === 'MANAGER' ? 'primary' : 'text'}
-              style={{
-                fontSize: 11,
-                height: 24,
-                padding: '0 8px',
-                borderRadius: 12,
-                fontWeight: user?.role === 'MANAGER' ? 700 : 500,
-                color: user?.role === 'MANAGER' ? '#fff' : '#475569',
-                background: user?.role === 'MANAGER' ? '#0284c7' : 'transparent',
-                borderColor: user?.role === 'MANAGER' ? '#0284c7' : 'transparent',
-              }}
-              onClick={() => handleQuickSwitch('quanly@gmail.com')}
-            >
-              🛡️ Quản lý
-            </Button>
-            <Button
-              size="small"
-              type={user?.role === 'HR_MANAGER' ? 'primary' : 'text'}
-              style={{
-                fontSize: 11,
-                height: 24,
-                padding: '0 8px',
-                borderRadius: 12,
-                fontWeight: user?.role === 'HR_MANAGER' ? 700 : 500,
-                color: user?.role === 'HR_MANAGER' ? '#fff' : '#475569',
-                background: user?.role === 'HR_MANAGER' ? '#7c3aed' : 'transparent',
-                borderColor: user?.role === 'HR_MANAGER' ? '#7c3aed' : 'transparent',
-              }}
-              onClick={() => handleQuickSwitch('hr@gmail.com')}
-            >
-              💼 HR - Kế toán
-            </Button>
-            <Button
-              size="small"
-              type={user?.role === 'EMPLOYEE' ? 'primary' : 'text'}
-              style={{
-                fontSize: 11,
-                height: 24,
-                padding: '0 8px',
-                borderRadius: 12,
-                fontWeight: user?.role === 'EMPLOYEE' ? 700 : 500,
-                color: user?.role === 'EMPLOYEE' ? '#fff' : '#475569',
-                background: user?.role === 'EMPLOYEE' ? '#16a34a' : 'transparent',
-                borderColor: user?.role === 'EMPLOYEE' ? '#16a34a' : 'transparent',
-              }}
-              onClick={() => handleQuickSwitch('nhanvien@gmail.com')}
-            >
-              👤 Nhân viên
-            </Button>
-          </div>,
-
           <Dropdown key="bell" menu={{ items: notifMenuItems }} trigger={['click']} placement="bottomRight">
             <div style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', padding: '0 4px' }}>
               <Badge count={unreadCount} size="small" offset={[-2, 2]}>

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Patch } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Patch, Query, Delete } from '@nestjs/common';
 import { PayrollService } from './payroll.service';
 import { Auth, GetUser } from '../auth/decorators';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
@@ -27,8 +27,8 @@ export class PayrollController {
   @Get('periods/:id/preview')
   @Auth('ADMIN', 'HR_MANAGER', 'HR_STAFF', 'ACCOUNTANT')
   @ApiOperation({ summary: 'Preview payroll calculation for a period (dry-run, no save)' })
-  async previewPayroll(@Param('id') periodId: string) {
-    return this.payrollService.previewPayroll(periodId);
+  async previewPayroll(@Param('id') periodId: string, @Query('departmentId') departmentId?: string) {
+    return this.payrollService.previewPayroll(periodId, departmentId);
   }
 
   @Post('periods')
@@ -39,6 +39,13 @@ export class PayrollController {
     @GetUser() user: any,
   ) {
     return this.payrollService.createPeriod(data.month, data.year, data.note, user.id);
+  }
+
+  @Delete('periods/:id')
+  @Auth('ADMIN', 'HR_MANAGER', 'ACCOUNTANT')
+  @ApiOperation({ summary: 'Delete a payroll period and its payslips' })
+  async deletePeriod(@Param('id') periodId: string) {
+    return this.payrollService.deletePeriod(periodId);
   }
 
   @Get('periods/:id/payslips')
@@ -58,8 +65,8 @@ export class PayrollController {
   @Post('periods/:id/compute')
   @Auth('ADMIN', 'HR_MANAGER', 'HR_STAFF', 'ACCOUNTANT')
   @ApiOperation({ summary: 'Compute payroll for a period (Accountant can run this)' })
-  async computePayroll(@Param('id') periodId: string) {
-    return this.payrollService.computePayroll(periodId);
+  async computePayroll(@Param('id') periodId: string, @Body() data?: any) {
+    return this.payrollService.computePayroll(periodId, data);
   }
 
   @Patch('periods/:id/approve')
@@ -81,5 +88,19 @@ export class PayrollController {
   @ApiOperation({ summary: 'Update bonus for a payslip' })
   async updateBonus(@Param('id') id: string, @Body('bonus') bonus: number) {
     return this.payrollService.updatePayslipBonus(id, bonus);
+  }
+
+  @Patch('payslips/:id/sales-kpi')
+  @Auth('ADMIN', 'HR_MANAGER', 'ACCOUNTANT', 'MANAGER')
+  @ApiOperation({ summary: 'Update sales KPI and commission for a payslip' })
+  async updateSalesKpi(@Param('id') id: string, @Body() data: any) {
+    return this.payrollService.updatePayslipSalesKpi(id, data);
+  }
+
+  @Post('periods/:id/check-kpi')
+  @Auth('ADMIN', 'HR_MANAGER', 'ACCOUNTANT', 'MANAGER')
+  @ApiOperation({ summary: 'Quick check and evaluate KPI for employees in a period' })
+  async checkPeriodKpi(@Param('id') periodId: string, @Body('departmentId') departmentId?: string) {
+    return this.payrollService.checkPeriodKpi(periodId, departmentId);
   }
 }

@@ -259,6 +259,7 @@ model Employee {
   overtimeApprovals OvertimeRequest[]    @relation("OTApprover")
   payslips          Payslip[]
   salaryProfiles    SalaryProfile[]
+  kpis              EmployeeKpi[]        @relation("EmployeeKpis")
   requestedRequisitions JobRequisition[] @relation("RequisitionRequester")
   referredCandidates    Candidate[]      @relation("CandidateReferrer")
   managedProjects       Project[]        @relation("ProjectManager")
@@ -545,6 +546,31 @@ model PerformanceReview {
   @@index([employeeId])
   @@index([period])
   @@map("performance_reviews")
+}
+
+model EmployeeKpi {
+  id               String    @id @default(uuid())
+  kpiCode          String
+  kpiName          String
+  employeeId       String
+  employee         Employee  @relation("EmployeeKpis", fields: [employeeId], references: [id], onDelete: Cascade)
+  month            Int
+  year             Int
+  targetAmount     Float
+  actualAmount     Float     @default(0)
+  commissionRate   Float     @default(5)
+  extraBonus       Float     @default(0)
+  isMet            Boolean   @default(false)
+  commissionAmount Float     @default(0)
+  status           String    @default("ACTIVE")
+  note             String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([employeeId, month, year])
+  @@index([employeeId])
+  @@index([month, year])
+  @@map("employee_kpis")
 }
 
 // ──────────────────────────────────────────────

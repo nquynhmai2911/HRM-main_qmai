@@ -123,18 +123,20 @@ export class RequisitionService {
     }
 
     if (action === 'APPROVE') {
-      let nextStatus = req.status;
+      let nextStatus = 'APPROVED';
       const updateData: any = {
         approvalComment: data.comment,
         salaryMin: data.salaryMin ?? req.salaryMin,
         salaryMax: data.salaryMax ?? req.salaryMax,
       };
 
-      if (req.status === 'PENDING_HR_APPROVAL') {
+      const isAdmin = user?.role === 'ADMIN' || user?.role === 'CEO';
+
+      if (req.status === 'PENDING_HR_APPROVAL' && !isAdmin) {
         nextStatus = 'PENDING_CEO_APPROVAL';
         updateData.hrApprovedAt = new Date();
-      } else if (req.status === 'PENDING_CEO_APPROVAL') {
-        nextStatus = 'APPROVED'; // or OPEN
+      } else {
+        nextStatus = 'APPROVED';
         updateData.ceoApprovedAt = new Date();
         updateData.approvedAt = new Date();
       }
@@ -152,8 +154,8 @@ export class RequisitionService {
 
   async publish(id: string) {
     const req = await this.findOne(id);
-    if (req.status !== 'APPROVED') {
-      throw new BadRequestException('Chỉ có thể đăng tin các yêu cầu đã được duyệt');
+    if (req.status === 'OPEN') {
+      return req;
     }
     return this.prisma.jobRequisition.update({
       where: { id },

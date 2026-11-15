@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Body, Param } from "@nestjs/common";
+import { Controller, Get, Post, Put, Delete, Body, Param, Query } from "@nestjs/common";
 import { DepartmentService } from "./department.service";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { Auth } from "../auth/decorators/auth.decorator";
@@ -12,6 +12,12 @@ export class DepartmentController {
   @Get()
   @Auth()
   findAll() { return this.departmentService.findAll(); }
+
+  @Get(':id/deletion-impact')
+  @Auth('ADMIN', 'HR_MANAGER')
+  getDeletionImpact(@Param('id') id: string) {
+    return this.departmentService.getDeletionImpact(id);
+  }
 
   @Post()
   @Auth('ADMIN', 'HR_MANAGER', 'HR_STAFF')
@@ -27,7 +33,12 @@ export class DepartmentController {
 
   @Delete(':id')
   @Auth('ADMIN', 'HR_MANAGER')
-  remove(@Param('id') id: string) {
-    return this.departmentService.remove(id);
+  remove(
+    @Param('id') id: string,
+    @Query('cascade') cascade?: string,
+    @Body('cascade') bodyCascade?: boolean,
+  ) {
+    const isCascade = cascade === 'true' || cascade === '1' || bodyCascade === true;
+    return this.departmentService.remove(id, isCascade);
   }
 }

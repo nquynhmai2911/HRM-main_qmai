@@ -33,6 +33,12 @@ export class AttendanceController {
     return this.attendanceService.getLeaveTypes();
   }
 
+  @Get(['attendance/leave-requests', 'leave/all-requests'])
+  @Auth()
+  getAllLeaveRequests(@GetUser() user: any) {
+    return this.attendanceService.getAllLeaveRequests(user);
+  }
+
   @Post('leave/request')
   @Auth()
   createLeaveRequest(@Body() data: any, @GetUser() user: any) {

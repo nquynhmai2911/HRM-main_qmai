@@ -16,6 +16,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor';
 import { PerformanceModule } from './performance/performance.module';
+import { KpiModule } from './kpi/kpi.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { PerformanceModule } from './performance/performance.module';
     PayrollModule,
     DashboardModule,
     PerformanceModule,
+    KpiModule,
   ],
   controllers: [AppController],
   providers: [

@@ -65,6 +65,7 @@ export class PayrollService {
       where: whereClause,
       include: {
         period: true,
+        items: true,
         employee: {
           include: {
             department: true,
@@ -173,6 +174,182 @@ export class PayrollService {
     });
   }
 
+  async updatePayslipSalesKpi(id: string, data: {
+    kpiTarget?: number;
+    salesActual?: number;
+    commissionRate?: number;
+    extraBonus?: number;
+    note?: string;
+  }) {
+    const payslip = await this.prisma.payslip.findUnique({
+      where: { id },
+      include: { employee: true, period: true }
+    });
+    if (!payslip) throw new NotFoundException('Phiếu lương không tồn tại');
+
+    const kpiTarget = Math.max(0, Number(data.kpiTarget) || 0);
+    const salesActual = Math.max(0, Number(data.salesActual) || 0);
+    const commissionRate = Math.max(0, Number(data.commissionRate) || 0);
+    const extraBonus = Number(data.extraBonus) || 0;
+
+    // Rule:
+    // If KPI is not met (salesActual < kpiTarget) => no commission (receives base salary)
+    // If KPI is met (salesActual >= kpiTarget) => receives commission = salesActual * (commissionRate / 100)
+    const isKpiMet = kpiTarget > 0 ? (salesActual >= kpiTarget) : (salesActual > 0);
+    const commissionAmount = isKpiMet ? Math.round(salesActual * (commissionRate / 100)) : 0;
+    const totalBonus = commissionAmount + extraBonus;
+
+    // Save/update items in PayslipItem
+    await this.prisma.payslipItem.deleteMany({
+      where: {
+        payslipId: id,
+        type: { in: ['KPI_TARGET', 'SALES_ACTUAL', 'COMMISSION_RATE', 'COMMISSION', 'KPI_STATUS'] }
+      }
+    });
+
+    await this.prisma.payslipItem.createMany({
+      data: [
+        { payslipId: id, type: 'KPI_TARGET', name: 'Chỉ tiêu KPI', amount: kpiTarget },
+        { payslipId: id, type: 'SALES_ACTUAL', name: 'Doanh số thực tế', amount: salesActual },
+        { payslipId: id, type: 'COMMISSION_RATE', name: 'Tỷ lệ hoa hồng (%)', amount: commissionRate },
+        { payslipId: id, type: 'COMMISSION', name: 'Tiền hoa hồng', amount: commissionAmount },
+        { payslipId: id, type: 'KPI_STATUS', name: isKpiMet ? 'ĐẠT KPI' : 'KHÔNG ĐẠT KPI', amount: isKpiMet ? 1 : 0 },
+      ]
+    });
+
+    const diff = totalBonus - (payslip.bonus || 0);
+    const newGross = Math.max(0, payslip.grossIncome + diff);
+    const newNet = Math.max(0, payslip.netPay + diff);
+
+    return this.prisma.payslip.update({
+      where: { id },
+      data: {
+        bonus: totalBonus,
+        grossIncome: newGross,
+        netPay: newNet,
+      },
+      include: {
+        items: true,
+        employee: {
+          include: { department: true, position: true }
+        }
+      }
+    });
+  }
+
+  async checkPeriodKpi(periodId: string, departmentId?: string) {
+    const period = await this.prisma.payrollPeriod.findUnique({ where: { id: periodId } });
+    if (!period) throw new NotFoundException('Kỳ lương không tồn tại');
+
+    const whereClause: any = { periodId };
+    if (departmentId && departmentId !== 'ALL') {
+      whereClause.employee = { departmentId };
+    }
+
+    const payslips = await this.prisma.payslip.findMany({
+      where: whereClause,
+      include: {
+        items: true,
+        employee: {
+          include: { department: true, position: true }
+        }
+      }
+    });
+
+    let metCount = 0;
+    let unmetCount = 0;
+
+    for (const p of payslips) {
+      const code = (p.employee?.department?.code || '').toUpperCase();
+      const deptName = (p.employee?.department?.name || '').toLowerCase();
+      const posName = (p.employee?.position?.name || '').toLowerCase();
+      const isSales =
+        code.includes('SALES') ||
+        code === 'BIZ' ||
+        code === 'MKT' ||
+        deptName.includes('kinh doanh') ||
+        deptName.includes('sales') ||
+        deptName.includes('bán hàng') ||
+        deptName.includes('marketing') ||
+        posName.includes('sales') ||
+        posName.includes('kinh doanh');
+
+      const getItem = (type: string) => p.items.find(i => i.type === type)?.amount;
+      const existingTarget = getItem('KPI_TARGET');
+      const existingActual = getItem('SALES_ACTUAL');
+      const existingRate   = getItem('COMMISSION_RATE');
+
+      let target = existingTarget != null ? Number(existingTarget) : (isSales ? 100000000 : 0);
+      let actual = existingActual != null ? Number(existingActual) : (isSales ? ((p.bonus && p.bonus > 1000000) ? p.bonus * 20 : 120000000) : 0);
+      let rate   = existingRate != null ? Number(existingRate) : 5;
+
+      // Check assigned KPI from employee_kpis table
+      const assignedKpi = await this.prisma.employeeKpi.findUnique({
+        where: {
+          employeeId_month_year: {
+            employeeId: p.employeeId,
+            month: period.month,
+            year: period.year,
+          },
+        },
+      });
+
+      if (assignedKpi) {
+        target = assignedKpi.targetAmount;
+        actual = assignedKpi.actualAmount;
+        rate   = assignedKpi.commissionRate;
+      }
+
+      const isKpiMet = target > 0 ? (actual >= target) : (actual > 0);
+      const commission = isKpiMet ? Math.round(actual * (rate / 100)) : 0;
+
+      if (isKpiMet) metCount++;
+      else unmetCount++;
+
+      // Upsert KPI items
+      await this.prisma.payslipItem.deleteMany({
+        where: {
+          payslipId: p.id,
+          type: { in: ['KPI_TARGET', 'SALES_ACTUAL', 'COMMISSION_RATE', 'COMMISSION', 'KPI_STATUS'] }
+        }
+      });
+
+      if (target > 0 || actual > 0) {
+        await this.prisma.payslipItem.createMany({
+          data: [
+            { payslipId: p.id, type: 'KPI_TARGET', name: 'Chỉ tiêu KPI', amount: target },
+            { payslipId: p.id, type: 'SALES_ACTUAL', name: 'Doanh số thực tế', amount: actual },
+            { payslipId: p.id, type: 'COMMISSION_RATE', name: 'Tỷ lệ hoa hồng (%)', amount: rate },
+            { payslipId: p.id, type: 'COMMISSION', name: 'Tiền hoa hồng', amount: commission },
+            { payslipId: p.id, type: 'KPI_STATUS', name: isKpiMet ? 'ĐẠT KPI' : 'KHÔNG ĐẠT KPI', amount: isKpiMet ? 1 : 0 },
+          ]
+        });
+      }
+
+      const diff = commission - (p.bonus || 0);
+      const newGross = Math.max(0, p.grossIncome + diff);
+      const newNet = Math.max(0, p.netPay + diff);
+
+      await this.prisma.payslip.update({
+        where: { id: p.id },
+        data: {
+          bonus: commission,
+          grossIncome: newGross,
+          netPay: newNet
+        }
+      });
+    }
+
+    const updatedPayslips = await this.getPayslipsByPeriod(periodId);
+    return {
+      success: true,
+      total: payslips.length,
+      metCount,
+      unmetCount,
+      payslips: updatedPayslips
+    };
+  }
+
   async getAllPeriods() {
     return this.prisma.payrollPeriod.findMany({
       orderBy: [
@@ -187,7 +364,7 @@ export class PayrollService {
     });
   }
 
-  async previewPayroll(periodId: string) {
+  async previewPayroll(periodId: string, departmentId?: string) {
     const period = await this.prisma.payrollPeriod.findUnique({ where: { id: periodId } });
     if (!period) throw new NotFoundException('Kỳ lương không tồn tại');
 
@@ -205,8 +382,13 @@ export class PayrollService {
     let taxBrackets: any[] = [];
     try { taxBrackets = JSON.parse(getConfig('PIT_TAX_BRACKETS', '[]')); } catch {}
 
+    const whereEmp: any = { status: 'ACTIVE' };
+    if (departmentId && departmentId !== 'ALL') {
+      whereEmp.departmentId = departmentId;
+    }
+
     const employees = await this.prisma.employee.findMany({
-      where: { status: 'ACTIVE' },
+      where: whereEmp,
       include: { dependents: true, department: true, position: true },
       orderBy: { fullName: 'asc' },
     });
@@ -218,24 +400,41 @@ export class PayrollService {
         orderBy: { effectiveFrom: 'desc' },
       });
 
+      const code = (emp.department?.code || '').toUpperCase();
+      const deptName = (emp.department?.name || '').toLowerCase();
+      const posName = (emp.position?.name || '').toLowerCase();
+      const isSales =
+        code.includes('SALES') ||
+        code === 'BIZ' ||
+        code === 'MKT' ||
+        deptName.includes('kinh doanh') ||
+        deptName.includes('sales') ||
+        deptName.includes('bán hàng') ||
+        deptName.includes('marketing') ||
+        posName.includes('sales') ||
+        posName.includes('kinh doanh');
+
       if (!profile) {
         rows.push({
           employeeId: emp.id,
           employeeCode: emp.employeeCode,
           fullName: emp.fullName,
           department: emp.department?.name ?? '—',
+          departmentId: emp.departmentId,
           position: emp.position?.name ?? '—',
           baseSalary: null,
           allowanceTotal: 0,
           workDays: 0,
           otAmount: 0,
           otHours: 0,
+          bonus: 0,
           grossIncome: 0,
           insuranceEmployee: 0,
           personalIncomeTax: 0,
           netPay: 0,
           numDependents: emp.dependents.length,
           hasSalaryProfile: false,
+          isSales,
         });
         continue;
       }
@@ -283,7 +482,26 @@ export class PayrollService {
       else if (workDays > 22) workDays = 22;
 
       const baseIncome        = (profile.baseSalary / 22) * workDays;
-      const grossIncome       = baseIncome + allowanceTotal + otAmount;
+      let bonus = 0;
+
+      // Check assigned KPI from employee_kpis table
+      const assignedKpi = await this.prisma.employeeKpi.findUnique({
+        where: {
+          employeeId_month_year: {
+            employeeId: emp.id,
+            month: period.month,
+            year: period.year,
+          },
+        },
+      });
+
+      if (assignedKpi) {
+        bonus = assignedKpi.commissionAmount + (assignedKpi.extraBonus || 0);
+      } else if (isSales) {
+        bonus = 6000000; // Estimated 5% of 120M
+      }
+
+      const grossIncome       = baseIncome + allowanceTotal + otAmount + bonus;
       const insuranceEmployee = profile.baseSalary * (bhxhRate + bhytRate + bhtnRate);
       const totalDepDeduction = emp.dependents.length * dependentDeduction;
       let taxable             = grossIncome - insuranceEmployee - personalDeduction - totalDepDeduction;
@@ -303,18 +521,21 @@ export class PayrollService {
         employeeCode: emp.employeeCode,
         fullName: emp.fullName,
         department: emp.department?.name ?? '—',
+        departmentId: emp.departmentId,
         position: emp.position?.name ?? '—',
         baseSalary: profile.baseSalary,
         allowanceTotal,
         workDays,
         otAmount,
         otHours,
+        bonus,
         grossIncome,
         insuranceEmployee,
         personalIncomeTax,
         netPay,
         numDependents: emp.dependents.length,
         hasSalaryProfile: true,
+        isSales,
       });
     }
 
@@ -322,23 +543,24 @@ export class PayrollService {
   }
 
   async createPeriod(month: number, year: number, note?: string, createdBy?: string) {
-    // Validate
-    if (month < 1 || month > 12) throw new BadRequestException('Tháng không hợp lệ (1-12)');
-    if (year < 2020 || year > 2100) throw new BadRequestException('Năm không hợp lệ');
+    const m = Number(month);
+    const y = Number(year);
+    if (!m || isNaN(m) || m < 1 || m > 12) throw new BadRequestException('Tháng không hợp lệ (1-12)');
+    if (!y || isNaN(y) || y < 2020 || y > 2100) throw new BadRequestException('Năm không hợp lệ');
 
     // Check duplicate (only version 1 for same month/year)
     const existing = await this.prisma.payrollPeriod.findFirst({
-      where: { month, year },
+      where: { month: m, year: y },
     });
     if (existing) {
-      throw new ConflictException(`Kỳ lương tháng ${month}/${year} đã tồn tại!`);
+      throw new ConflictException(`Kỳ lương tháng ${m}/${y} đã tồn tại!`);
     }
 
     return this.prisma.payrollPeriod.create({
       data: {
-        month,
-        year,
-        note: note || `Kỳ lương tháng ${month}/${year}`,
+        month: m,
+        year: y,
+        note: note || `Kỳ lương tháng ${m}/${y}`,
         status: 'DRAFT',
         createdBy,
       },
@@ -349,10 +571,16 @@ export class PayrollService {
     const period = await this.prisma.payrollPeriod.findUnique({ where: { id: periodId } });
     if (!period) throw new NotFoundException('Kỳ lương không tồn tại');
 
+    // Idempotent if already in target status
+    if (period.status === newStatus) {
+      return period;
+    }
+
     // Validate status transitions
     const allowedTransitions: Record<string, string[]> = {
-      DRAFT: ['APPROVED'],
-      APPROVED: ['PAID'],
+      DRAFT: ['APPROVED', 'PAID'],
+      APPROVED: ['PAID', 'DRAFT'],
+      PAID: ['APPROVED', 'DRAFT'],
     };
     if (!allowedTransitions[period.status]?.includes(newStatus)) {
       throw new BadRequestException(
@@ -378,24 +606,26 @@ export class PayrollService {
     });
   }
 
-  async batchUpdateSalaries(data: { effectiveDate: string; employees: { id: string; baseSalary: number; note: string }[] }) {
-    const effectiveFrom = new Date(data.effectiveDate);
+  async batchUpdateSalaries(data: { effectiveDate?: string; employees?: { id: string; baseSalary: number; note: string }[] }) {
+    const effectiveFrom = data.effectiveDate ? new Date(data.effectiveDate) : new Date();
     
-    for (const emp of data.employees) {
-      await this.prisma.salaryProfile.create({
-        data: {
-          employeeId: emp.id,
-          baseSalary: emp.baseSalary,
-          allowances: JSON.stringify({ note: emp.note }),
-          effectiveFrom,
-        },
-      });
+    if (Array.isArray(data.employees)) {
+      for (const emp of data.employees) {
+        await this.prisma.salaryProfile.create({
+          data: {
+            employeeId: emp.id,
+            baseSalary: Number(emp.baseSalary) || 0,
+            allowances: JSON.stringify({ note: emp.note }),
+            effectiveFrom,
+          },
+        });
+      }
     }
 
-    return { success: true, count: data.employees.length };
+    return { success: true, count: data.employees?.length || 0 };
   }
 
-  async computePayroll(periodId: string) {
+  async computePayroll(periodId: string, options?: { departmentId?: string; kpiTarget?: number; commissionRate?: number }) {
     const period = await this.prisma.payrollPeriod.findUnique({ where: { id: periodId } });
     if (!period) throw new NotFoundException('Kỳ lương không tồn tại');
 
@@ -404,10 +634,17 @@ export class PayrollService {
       throw new BadRequestException('Kỳ lương đã thanh toán, không thể tính lại!');
     }
 
+    const whereEmp: any = { status: 'ACTIVE' };
+    if (options?.departmentId && options.departmentId !== 'ALL') {
+      whereEmp.departmentId = options.departmentId;
+    }
+
     const employees = await this.prisma.employee.findMany({ 
-      where: { status: 'ACTIVE' },
+      where: whereEmp,
       include: {
-        dependents: true
+        dependents: true,
+        department: true,
+        position: true,
       }
     });
     const startDate = new Date(period.year, period.month - 1, 1);
@@ -455,7 +692,6 @@ export class PayrollService {
         } else if (parsed.amount) {
           allowanceTotal = Number(parsed.amount);
         } else if (typeof parsed === 'object') {
-          // sum all keys like { lunch: 700000, transport: 500000, phone: 200000 }
           allowanceTotal = Object.values(parsed as Record<string, number>)
             .filter(v => typeof v === 'number')
             .reduce((a, b) => a + b, 0);
@@ -506,16 +742,77 @@ export class PayrollService {
 
       const baseIncome = (profile.baseSalary / 22) * workDays;
       
-      // Upsert Payslip check (to preserve bonus if already set)
+      // Upsert Payslip check
       const existing = await this.prisma.payslip.findFirst({
         where: { periodId: period.id, employeeId: emp.id }
       });
-      const bonus = existing?.bonus || 0;
+
+      // Check if employee is Sales
+      const code = (emp.department?.code || '').toUpperCase();
+      const deptName = (emp.department?.name || '').toLowerCase();
+      const posName = (emp.position?.name || '').toLowerCase();
+      const isSales =
+        code.includes('SALES') ||
+        code === 'BIZ' ||
+        code === 'MKT' ||
+        deptName.includes('kinh doanh') ||
+        deptName.includes('sales') ||
+        deptName.includes('bán hàng') ||
+        deptName.includes('marketing') ||
+        posName.includes('sales') ||
+        posName.includes('kinh doanh');
+
+      let bonus = existing?.bonus || 0;
+      let salesKpiItems: any[] = [];
+
+      // Check if employee has assigned KPI in employee_kpis table
+      const assignedKpi = await this.prisma.employeeKpi.findUnique({
+        where: {
+          employeeId_month_year: {
+            employeeId: emp.id,
+            month: period.month,
+            year: period.year,
+          },
+        },
+      });
+
+      if (assignedKpi) {
+        const kpiTarget = assignedKpi.targetAmount;
+        const salesActual = assignedKpi.actualAmount;
+        const commissionRate = assignedKpi.commissionRate;
+        const isKpiMet = assignedKpi.isMet;
+        const commissionAmount = assignedKpi.commissionAmount;
+        bonus = commissionAmount + (assignedKpi.extraBonus || 0);
+
+        salesKpiItems = [
+          { type: 'KPI_TARGET', name: `Chỉ tiêu KPI (${assignedKpi.kpiCode})`, amount: kpiTarget },
+          { type: 'SALES_ACTUAL', name: 'Doanh số thực tế', amount: salesActual },
+          { type: 'COMMISSION_RATE', name: 'Tỷ lệ hoa hồng (%)', amount: commissionRate },
+          { type: 'COMMISSION', name: 'Tiền hoa hồng', amount: commissionAmount },
+          { type: 'KPI_STATUS', name: isKpiMet ? 'ĐẠT KPI' : 'KHÔNG ĐẠT KPI', amount: isKpiMet ? 1 : 0 },
+        ];
+      } else if (isSales) {
+        const kpiTarget = Number(options?.kpiTarget) || 100000000;
+        const commissionRate = Number(options?.commissionRate) || 5;
+        const salesActual = 120000000; // default actual for sales
+        const isKpiMet = salesActual >= kpiTarget;
+        const commissionAmount = isKpiMet ? Math.round(salesActual * (commissionRate / 100)) : 0;
+        bonus = commissionAmount;
+
+        salesKpiItems = [
+          { type: 'KPI_TARGET', name: 'Chỉ tiêu KPI', amount: kpiTarget },
+          { type: 'SALES_ACTUAL', name: 'Doanh số thực tế', amount: salesActual },
+          { type: 'COMMISSION_RATE', name: 'Tỷ lệ hoa hồng (%)', amount: commissionRate },
+          { type: 'COMMISSION', name: 'Tiền hoa hồng', amount: commissionAmount },
+          { type: 'KPI_STATUS', name: isKpiMet ? 'ĐẠT KPI' : 'KHÔNG ĐẠT KPI', amount: isKpiMet ? 1 : 0 },
+        ];
+      }
+
       const grossIncome = baseIncome + allowanceTotal + otAmount + bonus;
       
       // Insurances (calculated on base salary)
       const insuranceEmployee = profile.baseSalary * (bhxhRate + bhytRate + bhtnRate);
-      const insuranceCompany = profile.baseSalary * 0.215; // BHXH 17.5% + BHYT 3% + BHTN 1% 
+      const insuranceCompany = profile.baseSalary * 0.215;
       
       // Dependents
       const totalDependentDeduction = emp.dependents.length * dependentDeduction;
@@ -537,28 +834,57 @@ export class PayrollService {
 
       const netPay = Math.max(0, grossIncome - insuranceEmployee - personalIncomeTax);
 
+      let savedPayslipId = '';
       if (existing) {
-        await this.prisma.payslip.update({
+        const updated = await this.prisma.payslip.update({
           where: { id: existing.id },
           data: {
             workDays, standardWorkDays, baseIncome, allowanceTotal, otAmount, bonus,
             grossIncome, insuranceEmployee, insuranceCompany, personalIncomeTax, netPay
           }
         });
+        savedPayslipId = updated.id;
       } else {
-        await this.prisma.payslip.create({
+        const created = await this.prisma.payslip.create({
           data: {
             periodId: period.id, employeeId: emp.id,
             workDays, standardWorkDays, baseIncome, allowanceTotal, otAmount, bonus,
             grossIncome, insuranceEmployee, insuranceCompany, personalIncomeTax, netPay
           }
         });
+        savedPayslipId = created.id;
       }
+
+      if (salesKpiItems.length > 0 && savedPayslipId) {
+        await this.prisma.payslipItem.deleteMany({
+          where: {
+            payslipId: savedPayslipId,
+            type: { in: ['KPI_TARGET', 'SALES_ACTUAL', 'COMMISSION_RATE', 'COMMISSION', 'KPI_STATUS'] }
+          }
+        });
+        await this.prisma.payslipItem.createMany({
+          data: salesKpiItems.map(it => ({ ...it, payslipId: savedPayslipId }))
+        });
+      }
+
       count++;
     }
 
-    // Move status from DRAFT to DRAFT (keep) after compute
-    // Status stays DRAFT until manually approved
     return { success: true, count, skipped };
+  }
+
+  async deletePeriod(periodId: string) {
+    const period = await this.prisma.payrollPeriod.findUnique({ where: { id: periodId } });
+    if (!period) throw new NotFoundException('Kỳ lương không tồn tại');
+    if (period.status === 'PAID') {
+      throw new BadRequestException('Kỳ lương đã thanh toán, không thể xóa!');
+    }
+    const payslips = await this.prisma.payslip.findMany({ where: { periodId } });
+    const ids = payslips.map(p => p.id);
+    if (ids.length > 0) {
+      await this.prisma.payslipItem.deleteMany({ where: { payslipId: { in: ids } } });
+      await this.prisma.payslip.deleteMany({ where: { periodId } });
+    }
+    return this.prisma.payrollPeriod.delete({ where: { id: periodId } });
   }
 }

@@ -3,7 +3,7 @@ import {
   Card, Typography, Table, Spin, message, Tag, Button, Modal,
   Form, DatePicker, InputNumber, Input, Result, Space, Popconfirm,
   Divider, Row, Col, Statistic, Tooltip, Alert, Badge, Tabs, Select,
-  Descriptions,
+  Descriptions, Empty, Segmented,
 } from 'antd';
 import {
   CalculatorOutlined, CheckCircleOutlined, DollarOutlined,
@@ -11,7 +11,8 @@ import {
   ClockCircleOutlined, WarningOutlined, ExclamationCircleOutlined,
   SearchOutlined, CalendarOutlined, TeamOutlined, BankOutlined,
   PrinterOutlined, ReloadOutlined, SafetyCertificateOutlined,
-  FileExcelOutlined,
+  FileExcelOutlined, EditOutlined, TrophyOutlined, LaptopOutlined,
+  FilterOutlined, DownloadOutlined, DeleteOutlined,
 } from '@ant-design/icons';
 import apiClient from '../../../lib/api';
 import { useAuthStore } from '../../../lib/auth';
@@ -29,129 +30,294 @@ const statusConfig: Record<string, { color: string; label: string; icon: React.R
 const fmtVND = (v: number) =>
   v != null ? Number(v).toLocaleString('vi-VN') + ' ₫' : '0 ₫';
 
+// Format seniority from hireDate
+const formatSeniority = (hireDate?: string) => {
+  if (!hireDate) return 'Chưa cập nhật';
+  const hire = dayjs(hireDate);
+  const now = dayjs();
+  const diffMonths = Math.max(0, now.diff(hire, 'month'));
+  if (diffMonths < 1) return 'Mới vào (< 1 tháng)';
+  const years = Math.floor(diffMonths / 12);
+  const months = diffMonths % 12;
+  if (years === 0) return `${months} tháng`;
+  if (months === 0) return `${years} năm`;
+  return `${years} năm ${months} tháng`;
+};
+
+// Check if an employee belongs to Sales / Business Development
+const isSalesEmployee = (employee: any) => {
+  if (!employee) return false;
+  const code = (employee.department?.code || '').toUpperCase();
+  const deptName = (employee.department?.name || '').toLowerCase();
+  const posName = (employee.position?.name || '').toLowerCase();
+  return (
+    code.includes('SALES') ||
+    code === 'BIZ' ||
+    code === 'MKT' ||
+    deptName.includes('kinh doanh') ||
+    deptName.includes('sales') ||
+    deptName.includes('bán hàng') ||
+    deptName.includes('marketing') ||
+    posName.includes('sales') ||
+    posName.includes('kinh doanh')
+  );
+};
+
+// Extract Sales KPI data from payslip.items or defaults
+const getSalesKpi = (payslip: any) => {
+  const getItem = (type: string) => payslip?.items?.find((i: any) => i.type === type)?.amount;
+  const target = getItem('KPI_TARGET') != null ? Number(getItem('KPI_TARGET')) : 100000000;
+  const actual = getItem('SALES_ACTUAL') != null ? Number(getItem('SALES_ACTUAL')) : (payslip?.bonus ? payslip.bonus * 10 : 0);
+  const rate = getItem('COMMISSION_RATE') != null ? Number(getItem('COMMISSION_RATE')) : 5;
+  const isMetItem = payslip?.items?.find((i: any) => i.type === 'KPI_STATUS');
+  const isMet = isMetItem != null ? (isMetItem.amount === 1) : (target > 0 ? actual >= target : actual > 0);
+  const commission = getItem('COMMISSION') != null ? Number(getItem('COMMISSION')) : (isMet ? Math.round(actual * (rate / 100)) : 0);
+  const percent = target > 0 ? Math.round((actual / target) * 100) : 0;
+  return { target, actual, rate, commission, isMet, percent };
+};
+
 // ─────────────────────── INDIVIDUAL PAYSLIP POPUP MODAL ───────────────────────
 const IndividualPayslipModal = ({
   open, onClose, payslip,
 }: { open: boolean; onClose: () => void; payslip: any }) => {
   if (!payslip) return null;
 
+  const isSales = isSalesEmployee(payslip.employee);
+  const kpi = getSalesKpi(payslip);
+  const seniority = formatSeniority(payslip.employee?.hireDate);
+
   return (
     <Modal
       title={
         <Space>
           <FileTextOutlined style={{ color: '#1677ff' }} />
-          <span>Phiếu lương chi tiết — {payslip.employee?.fullName} ({payslip.employee?.employeeCode})</span>
+          <span>Phiếu lương chi tiết — {payslip.employee?.fullName}</span>
+          <Tag color="blue">{payslip.employee?.employeeCode}</Tag>
         </Space>
       }
       open={open}
       onCancel={onClose}
       footer={[
+        <Button key="csv" icon={<DownloadOutlined />} onClick={() => exportIndividualPayslipToCsv(payslip)}>
+          Xuất file CSV
+        </Button>,
         <Button key="print" icon={<PrinterOutlined />} onClick={() => window.print()}>
-          In phiếu lương
+          In phiếu lương (A4)
         </Button>,
         <Button key="close" type="primary" onClick={onClose}>
           Đóng
         </Button>
       ]}
       width={780}
+      style={{ top: 24 }}
     >
-      <div style={{ padding: '8px 4px' }}>
-        <div style={{ textAlign: 'center', marginBottom: 20 }}>
-          <Title level={4} style={{ margin: 0, color: '#1e3a8a' }}>PHIẾU LƯƠNG NHÂN VIÊN</Title>
-          <Text type="secondary">Kỳ lương: Tháng {payslip.period?.month}/{payslip.period?.year}</Text>
+      <div style={{ padding: '4px 0' }} className="printable-payslip">
+        <div style={{ textAlign: 'center', marginBottom: 18 }}>
+          <div style={{ fontSize: 13, textTransform: 'uppercase', color: '#64748b', letterSpacing: 0.5 }}>
+            CÔNG TY CỔ PHẦN CÔNG NGHỆ DTS VIỆT NAM
+          </div>
+          <Title level={4} style={{ margin: '4px 0 2px', color: '#1e3a8a' }}>
+            PHIẾU LƯƠNG NHÂN VIÊN
+          </Title>
+          <Text type="secondary" style={{ fontSize: 13 }}>
+            Kỳ lương: Tháng {payslip.period?.month}/{payslip.period?.year}
+          </Text>
         </div>
 
         {/* Thông tin nhân sự */}
-        <Descriptions bordered size="small" column={2} style={{ marginBottom: 16 }}>
+        <Descriptions bordered size="small" column={2} style={{ marginBottom: 14 }}>
           <Descriptions.Item label="Họ và tên">{payslip.employee?.fullName}</Descriptions.Item>
-          <Descriptions.Item label="Mã nhân viên"><Tag color="blue">{payslip.employee?.employeeCode}</Tag></Descriptions.Item>
+          <Descriptions.Item label="Mã nhân viên">{payslip.employee?.employeeCode}</Descriptions.Item>
           <Descriptions.Item label="Phòng ban">{payslip.employee?.department?.name || '—'}</Descriptions.Item>
           <Descriptions.Item label="Chức danh">{payslip.employee?.position?.name || '—'}</Descriptions.Item>
+          <Descriptions.Item label="Thâm niên công tác">{seniority}</Descriptions.Item>
+          <Descriptions.Item label="Tài khoản nhận lương">
+            {payslip.employee?.bankAccount ? `${payslip.employee?.bankAccount} (${payslip.employee?.bankName || ''})` : '—'}
+          </Descriptions.Item>
         </Descriptions>
 
-        {/* Chi tiết phân tích ngày công & nghỉ phép */}
-        <Divider orientation="left" style={{ margin: '12px 0', fontSize: 13, color: '#0284c7' }}>
-          TỔNG HỢP NGÀY CÔNG & NGHỈ PHÉP
+        {/* Tổng hợp ngày công & nghỉ phép */}
+        <Divider orientation="left" style={{ margin: '10px 0', fontSize: 13 }}>
+          1. Tổng hợp ngày công & nghỉ phép
         </Divider>
-        <Descriptions bordered size="small" column={3} style={{ marginBottom: 16 }}>
+        <Descriptions bordered size="small" column={3} style={{ marginBottom: 14 }}>
           <Descriptions.Item label="Công chuẩn">{payslip.standardWorkDays || 22} ngày</Descriptions.Item>
           <Descriptions.Item label="Chấm công">{payslip.actualWorkDays ?? payslip.workDays} ngày</Descriptions.Item>
-          <Descriptions.Item label="Nghỉ có phép">
-            <span style={{ color: payslip.paidLeaveDays > 0 ? '#1677ff' : 'inherit' }}>
-              {payslip.paidLeaveDays || 0} ngày
-            </span>
-          </Descriptions.Item>
+          <Descriptions.Item label="Nghỉ có phép">{payslip.paidLeaveDays || 0} ngày</Descriptions.Item>
           <Descriptions.Item label="Nghỉ lễ tết">{payslip.holidayDays || 0} ngày</Descriptions.Item>
           <Descriptions.Item label="Nghỉ chế độ">{payslip.regimeLeaveDays || 0} ngày</Descriptions.Item>
-          <Descriptions.Item label="Không phép">
-            <span style={{ color: payslip.unpaidLeaveDays > 0 ? '#dc2626' : 'inherit' }}>
-              {payslip.unpaidLeaveDays || 0} ngày
-            </span>
-          </Descriptions.Item>
-          <Descriptions.Item label="Phép còn lại">
-            <Tag color="green" style={{ fontWeight: 600 }}>
-              {payslip.remainingAnnualLeave ?? 12} / 12 ngày
-            </Tag>
-          </Descriptions.Item>
+          <Descriptions.Item label="Không phép">{payslip.unpaidLeaveDays || 0} ngày</Descriptions.Item>
+          <Descriptions.Item label="Phép năm còn lại">{payslip.remainingAnnualLeave ?? 12} / 12 ngày</Descriptions.Item>
           <Descriptions.Item label="Tổng công tính lương" span={2}>
-            <Tag color="cyan" style={{ fontWeight: 700 }}>
-              {payslip.workDays} ngày
-            </Tag>
+            <Text strong style={{ color: '#1677ff' }}>{payslip.workDays} ngày</Text>
           </Descriptions.Item>
         </Descriptions>
 
-        <Divider orientation="left" style={{ margin: '12px 0', fontSize: 13, color: '#52c41a' }}>
-          I. CÁC KHOẢN THU NHẬP
+        {/* Khối KPI & Hoa hồng nếu có */}
+        {(isSales || kpi.target > 0 || kpi.actual > 0) && (
+          <>
+            <Divider orientation="left" style={{ margin: '10px 0', fontSize: 13 }}>
+              2. Đánh giá KPI & Hoa hồng doanh số
+            </Divider>
+            <Descriptions bordered size="small" column={2} style={{ marginBottom: 14 }}>
+              <Descriptions.Item label="Chỉ tiêu KPI">{fmtVND(kpi.target)}</Descriptions.Item>
+              <Descriptions.Item label="Doanh số thực tế">
+                <Text strong>{fmtVND(kpi.actual)}</Text>
+              </Descriptions.Item>
+              <Descriptions.Item label="Tỷ lệ hoàn thành">
+                <Space size={6}>
+                  <Text strong>{kpi.percent}%</Text>
+                  {kpi.isMet ? (
+                    <Tag color="success">Đạt chỉ tiêu (≥ 100%)</Tag>
+                  ) : (
+                    <Tag color="error">Chưa đạt (&lt; 100%)</Tag>
+                  )}
+                </Space>
+              </Descriptions.Item>
+              <Descriptions.Item label="Tỷ lệ hoa hồng">{kpi.rate}%</Descriptions.Item>
+              <Descriptions.Item label="Tiền hoa hồng chiết khấu" span={2}>
+                {kpi.isMet ? (
+                  <Text strong style={{ color: '#16a34a' }}>
+                    +{fmtVND(kpi.commission)} (Đạt KPI =&gt; Nhận đủ lương cơ bản + Tiền hoa hồng)
+                  </Text>
+                ) : (
+                  <Text type="secondary">
+                    0 ₫ (Chưa đạt KPI =&gt; Chỉ nhận lương cơ bản theo ngày công)
+                  </Text>
+                )}
+              </Descriptions.Item>
+            </Descriptions>
+          </>
+        )}
+
+        {/* Các khoản thu nhập */}
+        <Divider orientation="left" style={{ margin: '10px 0', fontSize: 13 }}>
+          {isSales ? '3' : '2'}. Các khoản thu nhập
         </Divider>
-        <Descriptions bordered size="small" column={2} style={{ marginBottom: 16 }}>
+        <Descriptions bordered size="small" column={2} style={{ marginBottom: 14 }}>
           <Descriptions.Item label="Lương theo ngày công">{fmtVND(payslip.baseIncome)}</Descriptions.Item>
           <Descriptions.Item label="Tiền làm thêm giờ">{fmtVND(payslip.otAmount)}</Descriptions.Item>
           <Descriptions.Item label="Tổng phụ cấp">{fmtVND(payslip.allowanceTotal)}</Descriptions.Item>
-          <Descriptions.Item label="Tiền thưởng (nếu có)">
+          <Descriptions.Item label="Tiền thưởng / Hoa hồng">
             {payslip.bonus > 0 ? (
-              <Text strong style={{ color: '#d97706' }}>{fmtVND(payslip.bonus)}</Text>
+              <Text strong style={{ color: '#16a34a' }}>{fmtVND(payslip.bonus)}</Text>
             ) : (
               '0 ₫'
             )}
           </Descriptions.Item>
-          <Descriptions.Item label="TỔNG THU NHẬP" span={2}>
-            <Text strong style={{ color: '#52c41a', fontSize: 15 }}>{fmtVND(payslip.grossIncome)}</Text>
+          <Descriptions.Item label="TỔNG THU NHẬP (GROSS)" span={2}>
+            <Text strong style={{ color: '#1677ff' }}>{fmtVND(payslip.grossIncome)}</Text>
           </Descriptions.Item>
         </Descriptions>
 
-        <Divider orientation="left" style={{ margin: '12px 0', fontSize: 13, color: '#ff4d4f' }}>
-          II. CÁC KHOẢN KHẤU TRỪ VÀ THUẾ
+        {/* Các khoản khấu trừ */}
+        <Divider orientation="left" style={{ margin: '10px 0', fontSize: 13 }}>
+          {isSales ? '4' : '3'}. Các khoản giảm trừ & Thuế
         </Divider>
-        <Descriptions bordered size="small" column={2} style={{ marginBottom: 16 }}>
-          <Descriptions.Item label="Bảo hiểm NLĐ đóng (10.5%)">{fmtVND(payslip.insuranceEmployee)}</Descriptions.Item>
-          <Descriptions.Item label="Bảo hiểm DN đóng (21.5%)">{fmtVND(payslip.insuranceCompany)}</Descriptions.Item>
+        <Descriptions bordered size="small" column={2} style={{ marginBottom: 14 }}>
+          <Descriptions.Item label="BHXH NLĐ đóng (10.5%)">{fmtVND(payslip.insuranceEmployee)}</Descriptions.Item>
+          <Descriptions.Item label="BHXH Doanh nghiệp (21.5%)">{fmtVND(payslip.insuranceCompany)}</Descriptions.Item>
           <Descriptions.Item label="Thuế TNCN khấu trừ">{fmtVND(payslip.personalIncomeTax)}</Descriptions.Item>
           <Descriptions.Item label="Khấu trừ khác">{fmtVND(payslip.otherDeduction)}</Descriptions.Item>
-          <Descriptions.Item label="TỔNG CÁC KHOẢN KHẤU TRỪ" span={2}>
+          <Descriptions.Item label="TỔNG CÁC KHOẢN GIẢM TRỪ" span={2}>
             <Text strong style={{ color: '#ff4d4f' }}>
               - {fmtVND((payslip.insuranceEmployee || 0) + (payslip.personalIncomeTax || 0) + (payslip.otherDeduction || 0))}
             </Text>
           </Descriptions.Item>
         </Descriptions>
 
+        {/* Thực lĩnh */}
         <div style={{
-          backgroundColor: '#f0fdf4',
-          border: '1px solid #86efac',
-          borderRadius: 8,
-          padding: '16px',
+          backgroundColor: '#fafafa',
+          border: '1px solid #e2e8f0',
+          borderRadius: 6,
+          padding: '12px 16px',
           textAlign: 'center',
-          marginTop: 16
+          marginTop: 14
         }}>
-          <Text type="secondary" style={{ fontSize: 13, display: 'block', marginBottom: 4 }}>
+          <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 2 }}>
             SỐ TIỀN THỰC LĨNH CHUYỂN KHOẢN
           </Text>
-          <Title level={2} style={{ margin: 0, color: '#16a34a' }}>
+          <Title level={3} style={{ margin: 0, color: '#1677ff' }}>
             {fmtVND(payslip.netPay)}
           </Title>
         </div>
       </div>
     </Modal>
   );
+};
+
+// ─────────────────────── EXPORT INDIVIDUAL PAYSLIP TO CSV ───────────────────────
+const exportIndividualPayslipToCsv = (payslip: any) => {
+  if (!payslip) return;
+  const isSales = isSalesEmployee(payslip.employee);
+  const kpi = getSalesKpi(payslip);
+  const seniority = formatSeniority(payslip.employee?.hireDate);
+  const totalDeduct = (payslip.insuranceEmployee || 0) + (payslip.personalIncomeTax || 0) + (payslip.otherDeduction || 0);
+
+  const lines = [
+    `PHIẾU LƯƠNG NHÂN VIÊN - THÁNG ${payslip.period?.month || ''}/${payslip.period?.year || ''}`,
+    `Mã nhân viên:,"${payslip.employee?.employeeCode || ''}"`,
+    `Họ và tên:,"${payslip.employee?.fullName || ''}"`,
+    `Phòng ban:,"${payslip.employee?.department?.name || ''}"`,
+    `Chức danh:,"${payslip.employee?.position?.name || ''}"`,
+    `Thâm niên công tác:,"${seniority}"`,
+    `Số tài khoản:,"\t${payslip.employee?.bankAccount || ''}"`,
+    `Ngân hàng:,"${payslip.employee?.bankName || ''}"`,
+    '',
+    '1. NGÀY CÔNG VÀ CHẤM CÔNG',
+    `Ngày công chuẩn:,"${payslip.standardWorkDays || 22} ngày"`,
+    `Chấm công thực tế:,"${payslip.actualWorkDays ?? payslip.workDays ?? 0} ngày"`,
+    `Nghỉ có phép:,"${payslip.paidLeaveDays || 0} ngày"`,
+    `Nghỉ lễ tết:,"${payslip.holidayDays || 0} ngày"`,
+    `Nghỉ không phép:,"${payslip.unpaidLeaveDays || 0} ngày"`,
+    `Tổng ngày công tính lương:,"${payslip.workDays || 0} ngày"`,
+    '',
+  ];
+
+  if (isSales || kpi.target > 0 || kpi.actual > 0) {
+    lines.push(
+      '2. ĐÁNH GIÁ KPI & HOA HỒNG DOANH SỐ',
+      `Chỉ tiêu KPI:,"${kpi.target.toLocaleString('vi-VN')} ₫"`,
+      `Doanh số thực tế:,"${kpi.actual.toLocaleString('vi-VN')} ₫"`,
+      `Tỷ lệ đạt KPI:,"${kpi.percent}%"`,
+      `Trạng thái:,"${kpi.isMet ? 'Đạt chỉ tiêu (>= 100%)' : 'Chưa đạt (< 100%)'}"`,
+      `Tỷ lệ hoa hồng:,"${kpi.rate}%"`,
+      `Tiền hoa hồng chiết khấu:,"${(kpi.isMet ? kpi.commission : 0).toLocaleString('vi-VN')} ₫"`,
+      '',
+    );
+  }
+
+  lines.push(
+    '3. CÁC KHOẢN THU NHẬP',
+    `Lương theo ngày công:,"${(payslip.baseIncome || 0).toLocaleString('vi-VN')} ₫"`,
+    `Phụ cấp:,"${(payslip.allowanceTotal || 0).toLocaleString('vi-VN')} ₫"`,
+    `Tiền làm thêm giờ:,"${(payslip.otAmount || 0).toLocaleString('vi-VN')} ₫"`,
+    `Tiền thưởng / Hoa hồng:,"${(payslip.bonus || 0).toLocaleString('vi-VN')} ₫"`,
+    `TỔNG THU NHẬP (GROSS):,"${(payslip.grossIncome || 0).toLocaleString('vi-VN')} ₫"`,
+    '',
+    '4. CÁC KHOẢN GIẢM TRỪ VÀ THUẾ',
+    `BHXH NLĐ (10.5%):,"${(payslip.insuranceEmployee || 0).toLocaleString('vi-VN')} ₫"`,
+    `Bảo hiểm DN đóng (21.5%):,"${(payslip.insuranceCompany || 0).toLocaleString('vi-VN')} ₫"`,
+    `Thuế TNCN khấu trừ:,"${(payslip.personalIncomeTax || 0).toLocaleString('vi-VN')} ₫"`,
+    `Khấu trừ khác:,"${(payslip.otherDeduction || 0).toLocaleString('vi-VN')} ₫"`,
+    `TỔNG GIẢM TRỪ:,"${totalDeduct.toLocaleString('vi-VN')} ₫"`,
+    '',
+    '5. THỰC LĨNH CHUYỂN KHOẢN',
+    `SỐ TIỀN THỰC LĨNH:,"${(payslip.netPay || 0).toLocaleString('vi-VN')} ₫"`,
+  );
+
+  const csvContent = '\uFEFF' + lines.join('\r\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.setAttribute('download', `Phieu_Luong_${payslip.employee?.employeeCode}_Thang_${payslip.period?.month}_${payslip.period?.year}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+  message.success(`Đã xuất phiếu lương cá nhân của ${payslip.employee?.fullName}!`);
 };
 
 // ─────────────────────── EXCEL EXPORT HELPER ───────────────────────
@@ -167,30 +333,29 @@ const exportPayslipsToExcel = (payslips: any[], period: any) => {
     'Họ và tên',
     'Phòng ban',
     'Chức vụ',
-    'Ngày công chuẩn',
-    'Chấm công thực tế',
-    'Nghỉ có phép',
-    'Nghỉ lễ tết',
-    'Nghỉ chế độ',
-    'Nghỉ không phép',
-    'Phép năm còn lại',
-    'Tổng ngày công tính lương',
-    'Lương theo ngày công',
-    'Phụ cấp',
-    'Tiền làm thêm giờ',
-    'Tiền thưởng (nếu có)',
-    'Tổng thu nhập',
+    'Thâm niên',
+    'Chỉ tiêu KPI (₫)',
+    'Doanh số thực tế (₫)',
+    'Tỷ lệ đạt KPI (%)',
+    'Trạng thái KPI',
+    '% Hoa hồng',
+    'Tiền hoa hồng (₫)',
+    'Ngày công',
+    'Lương theo công (₫)',
+    'Phụ cấp (₫)',
+    'Làm thêm giờ (₫)',
+    'Tổng thu nhập (₫)',
     'BHXH NLĐ (10.5%)',
-    'BHXH Doanh nghiệp (21.5%)',
     'Thuế TNCN',
-    'Khấu trừ khác',
-    'Tổng các khoản khấu trừ',
-    'Tiền thực lĩnh chi trả',
+    'Tổng giảm trừ',
+    'Thực lĩnh (₫)',
     'Số tài khoản',
     'Ngân hàng',
   ];
 
   const rows = payslips.map((p, idx) => {
+    const kpi = getSalesKpi(p);
+    const seniority = formatSeniority(p.employee?.hireDate);
     const totalDeduct = (p.insuranceEmployee || 0) + (p.personalIncomeTax || 0) + (p.otherDeduction || 0);
     return [
       idx + 1,
@@ -198,23 +363,20 @@ const exportPayslipsToExcel = (payslips: any[], period: any) => {
       `"${p.employee?.fullName || ''}"`,
       `"${p.employee?.department?.name || ''}"`,
       `"${p.employee?.position?.name || ''}"`,
-      p.standardWorkDays || 22,
-      p.actualWorkDays ?? p.workDays ?? 0,
-      p.paidLeaveDays ?? 0,
-      p.holidayDays ?? 0,
-      p.regimeLeaveDays ?? 0,
-      p.unpaidLeaveDays ?? 0,
-      p.remainingAnnualLeave ?? 12,
+      `"${seniority}"`,
+      kpi.target,
+      kpi.actual,
+      `${kpi.percent}%`,
+      `"${kpi.isMet ? 'Đạt' : 'Chưa đạt'}"`,
+      `${kpi.rate}%`,
+      kpi.commission,
       p.workDays || 0,
       p.baseIncome || 0,
       p.allowanceTotal || 0,
       p.otAmount || 0,
-      p.bonus || 0,
       p.grossIncome || 0,
       p.insuranceEmployee || 0,
-      p.insuranceCompany || 0,
       p.personalIncomeTax || 0,
-      p.otherDeduction || 0,
       totalDeduct,
       p.netPay || 0,
       `"\t${p.employee?.bankAccount || ''}"`,
@@ -224,14 +386,7 @@ const exportPayslipsToExcel = (payslips: any[], period: any) => {
 
   const sumGross = payslips.reduce((s, p) => s + (p.grossIncome || 0), 0);
   const sumBase = payslips.reduce((s, p) => s + (p.baseIncome || 0), 0);
-  const sumAllow = payslips.reduce((s, p) => s + (p.allowanceTotal || 0), 0);
-  const sumOT = payslips.reduce((s, p) => s + (p.otAmount || 0), 0);
-  const sumBonus = payslips.reduce((s, p) => s + (p.bonus || 0), 0);
-  const sumInsEmp = payslips.reduce((s, p) => s + (p.insuranceEmployee || 0), 0);
-  const sumInsComp = payslips.reduce((s, p) => s + (p.insuranceCompany || 0), 0);
-  const sumTax = payslips.reduce((s, p) => s + (p.personalIncomeTax || 0), 0);
-  const sumOtherDed = payslips.reduce((s, p) => s + (p.otherDeduction || 0), 0);
-  const sumTotalDed = payslips.reduce((s, p) => s + ((p.insuranceEmployee || 0) + (p.personalIncomeTax || 0) + (p.otherDeduction || 0)), 0);
+  const sumComm = payslips.reduce((s, p) => s + getSalesKpi(p).commission, 0);
   const sumNet = payslips.reduce((s, p) => s + (p.netPay || 0), 0);
 
   const summaryRow = [
@@ -246,18 +401,15 @@ const exportPayslipsToExcel = (payslips: any[], period: any) => {
     '""',
     '""',
     '""',
-    '""',
+    sumComm,
     '""',
     sumBase,
-    sumAllow,
-    sumOT,
-    sumBonus,
+    '""',
+    '""',
     sumGross,
-    sumInsEmp,
-    sumInsComp,
-    sumTax,
-    sumOtherDed,
-    sumTotalDed,
+    '""',
+    '""',
+    '""',
     sumNet,
     '""',
     '""',
@@ -268,7 +420,7 @@ const exportPayslipsToExcel = (payslips: any[], period: any) => {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.setAttribute('download', `Bang_Tinh_Luong_Thang_${period?.month}_${period?.year}.csv`);
+  link.setAttribute('download', `Bang_Luong_Thang_${period?.month}_${period?.year}.csv`);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -276,547 +428,787 @@ const exportPayslipsToExcel = (payslips: any[], period: any) => {
   message.success('Đã xuất file Excel (.csv) bảng lương thành công!');
 };
 
-// ─────────────────────── PAYSLIP DETAIL MODAL (EXCEL SHEET STYLE) ───────────────
+// ─────────────────────── SALES KPI & COMMISSION CONFIG MODAL ───────────────────────
+const SalesKpiConfigModal = ({
+  open, onClose, payslip, onSaved,
+}: {
+  open: boolean;
+  onClose: () => void;
+  payslip: any;
+  onSaved: (updatedPayslip: any) => void;
+}) => {
+  const [form] = Form.useForm();
+  const [saving, setSaving] = useState(false);
+
+  const [calcTarget, setCalcTarget] = useState<number>(100000000);
+  const [calcActual, setCalcActual] = useState<number>(0);
+  const [calcRate, setCalcRate] = useState<number>(5);
+  const [calcExtraBonus, setCalcExtraBonus] = useState<number>(0);
+
+  useEffect(() => {
+    if (!open || !payslip) return;
+    const kpi = getSalesKpi(payslip);
+    setCalcTarget(kpi.target);
+    setCalcActual(kpi.actual);
+    setCalcRate(kpi.rate);
+    const extra = Math.max(0, (payslip.bonus || 0) - kpi.commission);
+    setCalcExtraBonus(extra);
+
+    form.setFieldsValue({
+      kpiTarget: kpi.target,
+      salesActual: kpi.actual,
+      commissionRate: kpi.rate,
+      extraBonus: extra,
+    });
+  }, [open, payslip, form]);
+
+  if (!payslip) return null;
+
+  const seniority = formatSeniority(payslip.employee?.hireDate);
+  const isKpiMet = calcTarget > 0 ? calcActual >= calcTarget : calcActual > 0;
+  const percentAchieved = calcTarget > 0 ? Math.round((calcActual / calcTarget) * 100) : 0;
+  const commissionAmount = isKpiMet ? Math.round(calcActual * (calcRate / 100)) : 0;
+  const totalBonus = commissionAmount + (calcExtraBonus || 0);
+
+  const diffBonus = totalBonus - (payslip.bonus || 0);
+  const estNet = Math.max(0, (payslip.netPay || 0) + diffBonus);
+
+  const handleFinish = async (values: any) => {
+    try {
+      setSaving(true);
+      const { data } = await apiClient.patch(`/payroll/payslips/${payslip.id}/sales-kpi`, {
+        kpiTarget: values.kpiTarget,
+        salesActual: values.salesActual,
+        commissionRate: values.commissionRate,
+        extraBonus: values.extraBonus,
+      });
+      message.success(`Đã cập nhật KPI & hoa hồng cho ${payslip.employee?.fullName}!`);
+      onSaved(data);
+      onClose();
+    } catch (err: any) {
+      message.error(err?.response?.data?.message || 'Lỗi khi lưu cấu hình KPI');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal
+      title={
+        <Space>
+          <EditOutlined style={{ color: '#1677ff' }} />
+          <span>Thiết lập KPI & Hoa hồng — {payslip.employee?.fullName}</span>
+          <Tag color="purple">Thâm niên: {seniority}</Tag>
+        </Space>
+      }
+      open={open}
+      onCancel={onClose}
+      width={680}
+      footer={null}
+      destroyOnHidden
+    >
+      <Text type="secondary" style={{ fontSize: 13, display: 'block', marginBottom: 16 }}>
+        Đủ KPI (≥ 100%): Nhận lương đúng + tiền hoa hồng chiết khấu. Chưa đủ KPI (&lt; 100%): Chỉ nhận lương cơ bản theo ngày công (hoa hồng = 0 ₫).
+      </Text>
+
+      <Form form={form} layout="vertical" onFinish={handleFinish}>
+        <Row gutter={16}>
+          <Col span={12}>
+            <Form.Item
+              name="kpiTarget"
+              label="Chỉ tiêu KPI doanh số (₫)"
+              rules={[{ required: true, message: 'Vui lòng nhập chỉ tiêu KPI!' }]}
+            >
+              <InputNumber
+                style={{ width: '100%' }}
+                min={0}
+                step={10000000}
+                formatter={v => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                parser={v => (v ? v.replace(/,*/g, '') : '') as any}
+                onChange={v => setCalcTarget(Number(v) || 0)}
+              />
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item
+              name="salesActual"
+              label="Doanh số thực tế (₫)"
+              rules={[{ required: true, message: 'Vui lòng nhập doanh số thực tế!' }]}
+            >
+              <InputNumber
+                style={{ width: '100%' }}
+                min={0}
+                step={10000000}
+                formatter={v => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                parser={v => (v ? v.replace(/,*/g, '') : '') as any}
+                onChange={v => setCalcActual(Number(v) || 0)}
+              />
+            </Form.Item>
+          </Col>
+        </Row>
+
+        <Row gutter={16}>
+          <Col span={12}>
+            <Form.Item
+              name="commissionRate"
+              label="Tỷ lệ hoa hồng chiết khấu (%)"
+              rules={[{ required: true, message: 'Vui lòng nhập tỷ lệ hoa hồng!' }]}
+            >
+              <InputNumber
+                style={{ width: '100%' }}
+                min={0}
+                max={100}
+                step={0.5}
+                suffix="%"
+                onChange={v => setCalcRate(Number(v) || 0)}
+              />
+            </Form.Item>
+            <Space size={4} style={{ marginTop: -12, marginBottom: 12 }}>
+              {[3, 5, 8, 10].map(r => (
+                <Button
+                  key={r}
+                  size="small"
+                  type="dashed"
+                  onClick={() => {
+                    form.setFieldsValue({ commissionRate: r });
+                    setCalcRate(r);
+                  }}
+                >
+                  {r}%
+                </Button>
+              ))}
+            </Space>
+          </Col>
+          <Col span={12}>
+            <Form.Item
+              name="extraBonus"
+              label="Thưởng khác (₫)"
+            >
+              <InputNumber
+                style={{ width: '100%' }}
+                min={0}
+                step={500000}
+                formatter={v => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                parser={v => (v ? v.replace(/,*/g, '') : '') as any}
+                onChange={v => setCalcExtraBonus(Number(v) || 0)}
+              />
+            </Form.Item>
+          </Col>
+        </Row>
+
+        {/* Kết quả tính toán tóm tắt */}
+        <div style={{
+          background: '#f8fafc',
+          border: '1px solid #e2e8f0',
+          borderRadius: 6,
+          padding: '12px 16px',
+          marginBottom: 18,
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+            <span style={{ fontSize: 13, color: '#334155' }}>Đánh giá kết quả:</span>
+            {isKpiMet ? (
+              <Tag color="success" style={{ fontWeight: 600 }}>Đạt chỉ tiêu ({percentAchieved}%)</Tag>
+            ) : (
+              <Tag color="error" style={{ fontWeight: 600 }}>Chưa đạt KPI ({percentAchieved}%)</Tag>
+            )}
+          </div>
+          <Row gutter={12}>
+            <Col span={8}>
+              <div style={{ fontSize: 11, color: '#64748b' }}>Tiền hoa hồng:</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: isKpiMet ? '#16a34a' : '#94a3b8' }}>
+                {isKpiMet ? fmtVND(commissionAmount) : '0 ₫'}
+              </div>
+            </Col>
+            <Col span={8}>
+              <div style={{ fontSize: 11, color: '#64748b' }}>Lương cơ bản theo công:</div>
+              <div style={{ fontSize: 16, fontWeight: 600 }}>
+                {fmtVND(payslip.baseIncome)}
+              </div>
+            </Col>
+            <Col span={8}>
+              <div style={{ fontSize: 11, color: '#64748b' }}>Thực lĩnh ước tính:</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#1677ff' }}>
+                {fmtVND(estNet)}
+              </div>
+            </Col>
+          </Row>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <Button onClick={onClose} disabled={saving}>Hủy</Button>
+          <Button type="primary" htmlType="submit" loading={saving}>
+            Lưu kết quả
+          </Button>
+        </div>
+      </Form>
+    </Modal>
+  );
+};
+
+// ─────────────────────── PAYSLIP DETAIL MODAL (MAIN PAYROLL SHEET) ───────────────
 const PayslipDetailModal = ({
   open, onClose, period,
 }: { open: boolean; onClose: () => void; period: any }) => {
   const [payslips, setPayslips] = useState<any[]>([]);
+  const [departments, setDepartments] = useState<any[]>([]);
   const [loading, setLoading]   = useState(false);
+  const [checkingKpi, setCheckingKpi] = useState(false);
   const [searchText, setSearchText] = useState('');
+  const [selectedDeptId, setSelectedDeptId] = useState<string>('ALL');
+  const [kpiFilter, setKpiFilter] = useState<'ALL' | 'MET' | 'UNMET'>('ALL');
+
   const [selectedPayslip, setSelectedPayslip] = useState<any>(null);
+  const [salesKpiModal, setSalesKpiModal] = useState<{ open: boolean; payslip: any }>({ open: false, payslip: null });
 
   useEffect(() => {
     if (!open || !period) return;
     setLoading(true);
-    apiClient.get(`/payroll/periods/${period.id}/payslips`)
-      .then(({ data }) => setPayslips(data || []))
-      .catch(() => message.error('Lỗi khi tải danh sách phiếu lương'))
+    Promise.all([
+      apiClient.get(`/payroll/periods/${period.id}/payslips`),
+      apiClient.get('/organization/departments'),
+    ])
+      .then(([psRes, deptRes]) => {
+        setPayslips(psRes.data || []);
+        setDepartments(deptRes.data || []);
+      })
+      .catch(() => message.error('Lỗi khi tải danh sách phiếu lương & phòng ban'))
       .finally(() => setLoading(false));
   }, [open, period]);
 
-  const filteredPayslips = useMemo(() => {
-    if (!searchText.trim()) return payslips;
-    const q = searchText.toLowerCase();
+  // Handle Quick Check KPI button
+  const handleQuickCheckKpi = async () => {
+    try {
+      setCheckingKpi(true);
+      const { data } = await apiClient.post(`/payroll/periods/${period.id}/check-kpi`, {
+        departmentId: selectedDeptId,
+      });
+      if (data?.payslips) {
+        setPayslips(data.payslips);
+      }
+      message.success(`Đã kiểm tra nhanh KPI: ${data.metCount} nhân sự đạt chỉ tiêu, ${data.unmetCount} nhân sự chưa đạt.`);
+    } catch (err: any) {
+      message.error(err?.response?.data?.message || 'Lỗi khi kiểm tra KPI');
+    } finally {
+      setCheckingKpi(false);
+    }
+  };
+
+  // Filter by department
+  const deptPayslips = useMemo(() => {
+    if (selectedDeptId === 'ALL') return payslips;
     return payslips.filter(p =>
+      p.employee?.departmentId === selectedDeptId ||
+      p.employee?.department?.id === selectedDeptId
+    );
+  }, [payslips, selectedDeptId]);
+
+  // Counts of Met & Unmet in currently selected department
+  const { metCount, unmetCount } = useMemo(() => {
+    let met = 0;
+    let unmet = 0;
+    deptPayslips.forEach(p => {
+      const kpi = getSalesKpi(p);
+      if (kpi.isMet) met++;
+      else unmet++;
+    });
+    return { metCount: met, unmetCount: unmet };
+  }, [deptPayslips]);
+
+  // Final filtered list based on department, kpiFilter (2 groups), and search text
+  const filteredPayslips = useMemo(() => {
+    let result = deptPayslips;
+
+    // Filter by KPI group
+    if (kpiFilter === 'MET') {
+      result = result.filter(p => getSalesKpi(p).isMet);
+    } else if (kpiFilter === 'UNMET') {
+      result = result.filter(p => !getSalesKpi(p).isMet);
+    }
+
+    if (!searchText.trim()) return result;
+    const q = searchText.toLowerCase();
+    return result.filter(p =>
       (p.employee?.fullName && p.employee.fullName.toLowerCase().includes(q)) ||
       (p.employee?.employeeCode && p.employee.employeeCode.toLowerCase().includes(q)) ||
-      (p.employee?.department?.name && p.employee.department.name.toLowerCase().includes(q))
+      (p.employee?.department?.name && p.employee.department.name.toLowerCase().includes(q)) ||
+      (p.employee?.position?.name && p.employee.position.name.toLowerCase().includes(q))
     );
-  }, [payslips, searchText]);
+  }, [deptPayslips, kpiFilter, searchText]);
 
   const summary = useMemo(() => ({
     totalGross:      filteredPayslips.reduce((s: number, r: any) => s + (r.grossIncome || 0), 0),
     totalBase:       filteredPayslips.reduce((s: number, r: any) => s + (r.baseIncome || 0), 0),
-    totalAllow:      filteredPayslips.reduce((s: number, r: any) => s + (r.allowanceTotal || 0), 0),
-    totalOT:         filteredPayslips.reduce((s: number, r: any) => s + (r.otAmount || 0), 0),
-    totalBonus:      filteredPayslips.reduce((s: number, r: any) => s + (r.bonus || 0), 0),
     totalNet:        filteredPayslips.reduce((s: number, r: any) => s + (r.netPay || 0), 0),
-    totalTax:        filteredPayslips.reduce((s: number, r: any) => s + (r.personalIncomeTax || 0), 0),
-    totalInsurance:  filteredPayslips.reduce((s: number, r: any) => s + (r.insuranceEmployee || 0), 0),
-    totalCompanyIns: filteredPayslips.reduce((s: number, r: any) => s + (r.insuranceCompany || 0), 0),
-    totalDeductions: filteredPayslips.reduce((s: number, r: any) => s + ((r.insuranceEmployee || 0) + (r.personalIncomeTax || 0) + (r.otherDeduction || 0)), 0),
+    totalCommission: filteredPayslips.reduce((s: number, r: any) => s + getSalesKpi(r).commission, 0),
+    metInView:       filteredPayslips.filter(r => getSalesKpi(r).isMet).length,
   }), [filteredPayslips]);
+
+  const handleUpdatePayslip = (updated: any) => {
+    setPayslips(prev => prev.map(p => (p.id === updated.id ? { ...p, ...updated } : p)));
+  };
 
   return (
     <Modal
-      title={null}
+      title={
+        <Space size={8}>
+          <CalculatorOutlined style={{ color: '#1677ff', fontSize: 18 }} />
+          <span style={{ fontSize: 16, fontWeight: 600 }}>Bảng tính lương tháng {period?.month}/{period?.year}</span>
+          <Tag color={statusConfig[period?.status]?.color} style={{ marginLeft: 6 }}>
+            {statusConfig[period?.status]?.label}
+          </Tag>
+        </Space>
+      }
       open={open}
       onCancel={onClose}
       footer={[
         <Space key="footer-actions" style={{ width: '100%', justifyContent: 'space-between' }}>
-          <Space>
-            <Tag color="green" icon={<FileExcelOutlined />}>Định dạng Bảng tính Excel</Tag>
-            <Text type="secondary" style={{ fontSize: 13 }}>
-              Tổng cộng: <Text strong>{filteredPayslips.length}</Text> nhân sự trong kỳ lương
-            </Text>
-          </Space>
+          <Text type="secondary" style={{ fontSize: 13 }}>
+            Hiển thị: <Text strong>{filteredPayslips.length}</Text> / {payslips.length} nhân sự
+          </Text>
           <Space>
             <Button
               icon={<FileExcelOutlined style={{ color: '#107c41' }} />}
               onClick={() => exportPayslipsToExcel(filteredPayslips, period)}
             >
-              Xuất file Excel (.csv)
+              Xuất Excel (.csv)
             </Button>
             <Button icon={<PrinterOutlined />} onClick={() => window.print()}>
               In bảng lương
             </Button>
             <Button type="primary" onClick={onClose}>
-              Đóng bảng tính
+              Đóng
             </Button>
           </Space>
         </Space>
       ]}
-      width={1580}
-      style={{ top: 16 }}
-      bodyStyle={{ padding: 0 }}
+      width={1500}
+      style={{ top: 20 }}
     >
-      {/* Excel Ribbon Top Bar */}
-      <div style={{
-        background: 'linear-gradient(135deg, #107c41 0%, #0d5f32 100%)',
-        padding: '14px 24px',
-        color: '#ffffff',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        borderTopLeftRadius: 8,
-        borderTopRightRadius: 8,
-      }}>
-        <Space size={14} align="center">
+      {loading ? (
+        <Spin style={{ display: 'block', margin: '50px auto' }} />
+      ) : (
+        <>
+          {/* Controls Bar: Chọn phòng ban + Nút Kiểm tra nhanh KPI + Phân 2 nhóm KPI */}
           <div style={{
-            width: 42,
-            height: 42,
-            borderRadius: 8,
-            background: 'rgba(255,255,255,0.18)',
+            background: '#fafafa',
+            border: '1px solid #f0f0f0',
+            borderRadius: 6,
+            padding: '10px 14px',
+            marginBottom: 14,
             display: 'flex',
+            justifyContent: 'space-between',
             alignItems: 'center',
-            justifyContent: 'center',
-            border: '1px solid rgba(255,255,255,0.3)',
+            flexWrap: 'wrap',
+            gap: 10,
           }}>
-            <FileExcelOutlined style={{ fontSize: 24, color: '#ffffff' }} />
-          </div>
-          <div>
-            <div style={{ fontSize: 17, fontWeight: 700, color: '#ffffff', letterSpacing: 0.3 }}>
-              BẢNG TÍNH LƯƠNG TOÀN DOANH NGHIỆP — THÁNG {period?.month}/{period?.year}
-            </div>
-            <div style={{ fontSize: 12, color: '#dcfce7', marginTop: 2 }}>
-              Dữ liệu chi tiết: Chấm công, nghỉ có phép, lễ tết, chế độ, không phép, phép còn lại, thưởng và tiền thực lĩnh
-            </div>
-          </div>
-          <Tag color={statusConfig[period?.status]?.color} style={{ marginLeft: 12, fontWeight: 600 }}>
-            {statusConfig[period?.status]?.label}
-          </Tag>
-        </Space>
-
-        <Space size={10}>
-          <Button
-            icon={<FileExcelOutlined />}
-            style={{
-              background: '#ffffff',
-              color: '#107c41',
-              borderColor: '#ffffff',
-              fontWeight: 600,
-            }}
-            onClick={() => exportPayslipsToExcel(filteredPayslips, period)}
-          >
-            Xuất file Excel (.csv)
-          </Button>
-          <Button
-            icon={<PrinterOutlined />}
-            style={{
-              background: 'rgba(255,255,255,0.15)',
-              borderColor: 'rgba(255,255,255,0.35)',
-              color: '#ffffff',
-            }}
-            onClick={() => window.print()}
-          >
-            In bảng lương
-          </Button>
-        </Space>
-      </div>
-
-      <div style={{ padding: '20px 24px' }}>
-        {loading ? (
-          <Spin style={{ display: 'block', margin: '60px auto' }} />
-        ) : (
-          <>
-            {/* Metric Summary Cards styled like Excel Dashboard */}
-            <Row gutter={14} style={{ marginBottom: 18 }}>
-              <Col span={6}>
-                <Card size="small" style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 8 }}>
-                  <Statistic
-                    title={<Text strong style={{ color: '#166534', fontSize: 13 }}>I. Tổng quỹ thu nhập</Text>}
-                    value={summary.totalGross}
-                    formatter={v => fmtVND(Number(v))}
-                    valueStyle={{ color: '#15803d', fontSize: 18, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}
-                  />
-                  <Text type="secondary" style={{ fontSize: 11 }}>Lương công, phụ cấp, OT & tiền thưởng</Text>
-                </Card>
-              </Col>
-              <Col span={6}>
-                <Card size="small" style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8 }}>
-                  <Statistic
-                    title={<Text strong style={{ color: '#1e40af', fontSize: 13 }}>II. Tiền làm thêm giờ</Text>}
-                    value={summary.totalOT}
-                    formatter={v => fmtVND(Number(v))}
-                    valueStyle={{ color: '#2563eb', fontSize: 18, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}
-                  />
-                  <Text type="secondary" style={{ fontSize: 11 }}>Tổng tiền làm thêm / tăng ca toàn công ty</Text>
-                </Card>
-              </Col>
-              <Col span={6}>
-                <Card size="small" style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 8 }}>
-                  <Statistic
-                    title={<Text strong style={{ color: '#b45309', fontSize: 13 }}>III. Tiền thưởng (nếu có)</Text>}
-                    value={summary.totalBonus}
-                    formatter={v => fmtVND(Number(v))}
-                    valueStyle={{ color: '#d97706', fontSize: 18, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}
-                  />
-                  <Text type="secondary" style={{ fontSize: 11 }}>Thưởng KPI, hiệu quả & khen thưởng định kỳ</Text>
-                </Card>
-              </Col>
-              <Col span={6}>
-                <Card size="small" style={{ background: '#ecfeff', border: '2px solid #0284c7', borderRadius: 8 }}>
-                  <Statistic
-                    title={<Text strong style={{ color: '#0369a1', fontSize: 13 }}>IV. TỔNG THỰC LĨNH CHI TRẢ</Text>}
-                    value={summary.totalNet}
-                    formatter={v => fmtVND(Number(v))}
-                    valueStyle={{ color: '#0284c7', fontSize: 19, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}
-                  />
-                  <Text type="secondary" style={{ fontSize: 11 }}>Số tiền thực chuyển khoản tới nhân viên</Text>
-                </Card>
-              </Col>
-            </Row>
-
-            {/* Excel Sheet Controls */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <Space>
-                <Input
-                  placeholder="Lọc theo Mã NV, Họ tên hoặc Phòng ban..."
-                  prefix={<SearchOutlined style={{ color: '#bfbfbf' }} />}
-                  value={searchText}
-                  onChange={e => setSearchText(e.target.value)}
-                  allowClear
-                  style={{ width: 340 }}
-                />
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  (Bảng tính gồm chi tiết chấm công, các diện nghỉ phép, thưởng và tiền thực lĩnh)
-                </Text>
+            <Space size={10} wrap>
+              {/* Dropdown phòng ban */}
+              <Space size={6}>
+                <Text style={{ fontSize: 13, color: '#334155' }}>Phòng ban:</Text>
+                <Select
+                  style={{ width: 230 }}
+                  value={selectedDeptId}
+                  onChange={v => setSelectedDeptId(v)}
+                  placeholder="Chọn phòng ban"
+                >
+                  <Option value="ALL">Tất cả phòng ban ({payslips.length} NV)</Option>
+                  {departments.map((dept: any) => {
+                    const count = payslips.filter(
+                      p => p.employee?.departmentId === dept.id || p.employee?.department?.id === dept.id
+                    ).length;
+                    return (
+                      <Option key={dept.id} value={dept.id}>
+                        {dept.name} ({count} NV)
+                      </Option>
+                    );
+                  })}
+                </Select>
               </Space>
-              <Text type="secondary" style={{ fontSize: 13 }}>
-                Đang hiển thị: <Text strong style={{ color: '#107c41' }}>{filteredPayslips.length}</Text> / {payslips.length} dòng dữ liệu
-              </Text>
+
+              {/* Nút Kiểm tra nhanh KPI */}
+              <Button
+                type="primary"
+                icon={<CheckCircleOutlined />}
+                loading={checkingKpi}
+                onClick={handleQuickCheckKpi}
+              >
+                Kiểm tra nhanh KPI
+              </Button>
+
+              {/* Bộ lọc 2 nhóm: Đạt KPI vs Chưa đạt KPI */}
+              <Segmented
+                value={kpiFilter}
+                onChange={(val: any) => setKpiFilter(val)}
+                options={[
+                  { label: `Tất cả (${deptPayslips.length})`, value: 'ALL' },
+                  {
+                    label: (
+                      <Space size={4}>
+                        <Badge status="success" />
+                        <span>Đạt KPI ({metCount})</span>
+                      </Space>
+                    ),
+                    value: 'MET'
+                  },
+                  {
+                    label: (
+                      <Space size={4}>
+                        <Badge status="error" />
+                        <span>Chưa đạt KPI ({unmetCount})</span>
+                      </Space>
+                    ),
+                    value: 'UNMET'
+                  },
+                ]}
+              />
+            </Space>
+
+            {/* Tìm kiếm */}
+            <Space size={8}>
+              <Input
+                placeholder="Tìm mã NV, họ tên..."
+                prefix={<SearchOutlined style={{ color: '#bfbfbf' }} />}
+                value={searchText}
+                onChange={e => setSearchText(e.target.value)}
+                allowClear
+                style={{ width: 190 }}
+              />
+              <Button
+                icon={<FileExcelOutlined />}
+                onClick={() => exportPayslipsToExcel(filteredPayslips, period)}
+              >
+                Xuất Excel
+              </Button>
+            </Space>
+          </div>
+
+          {/* Kiểm tra phòng ban rỗng (phòng mới tạo chưa có nhân viên) */}
+          {selectedDeptId !== 'ALL' && deptPayslips.length === 0 ? (
+            <div style={{ padding: '48px 0', textAlign: 'center' }}>
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={
+                  <div>
+                    <Text strong style={{ fontSize: 15, color: '#334155' }}>
+                      Phòng ban này hiện chưa có nhân viên nào
+                    </Text>
+                    <div style={{ fontSize: 13, color: '#64748b', marginTop: 4 }}>
+                      Phòng mới tạo hoặc chưa có nhân sự tính lương trong kỳ này.
+                    </div>
+                  </div>
+                }
+              >
+                <Button type="primary" onClick={() => setSelectedDeptId('ALL')}>
+                  Xem tất cả phòng ban
+                </Button>
+              </Empty>
             </div>
+          ) : (
+            <>
+              {/* Thống kê 4 chỉ số tinh gọn */}
+              <Row gutter={12} style={{ marginBottom: 14 }}>
+                <Col span={6}>
+                  <Card size="small" style={{ borderRadius: 6, borderColor: '#f0f0f0' }}>
+                    <Statistic
+                      title={<Text style={{ fontSize: 12, color: '#64748b' }}>Nhân sự hiển thị</Text>}
+                      value={filteredPayslips.length}
+                      suffix="NV"
+                      valueStyle={{ fontSize: 18, fontWeight: 700 }}
+                    />
+                  </Card>
+                </Col>
+                <Col span={6}>
+                  <Card size="small" style={{ borderRadius: 6, borderColor: '#f0f0f0' }}>
+                    <Statistic
+                      title={<Text style={{ fontSize: 12, color: '#64748b' }}>Đạt chỉ tiêu KPI</Text>}
+                      value={summary.metInView}
+                      suffix={`/ ${filteredPayslips.length} NV`}
+                      valueStyle={{ fontSize: 18, fontWeight: 700, color: '#16a34a' }}
+                    />
+                  </Card>
+                </Col>
+                <Col span={6}>
+                  <Card size="small" style={{ borderRadius: 6, borderColor: '#f0f0f0' }}>
+                    <Statistic
+                      title={<Text style={{ fontSize: 12, color: '#64748b' }}>Tổng tiền hoa hồng</Text>}
+                      value={summary.totalCommission}
+                      formatter={v => fmtVND(Number(v))}
+                      valueStyle={{ fontSize: 18, fontWeight: 700, color: '#16a34a' }}
+                    />
+                  </Card>
+                </Col>
+                <Col span={6}>
+                  <Card size="small" style={{ borderRadius: 6, borderColor: '#f0f0f0' }}>
+                    <Statistic
+                      title={<Text style={{ fontSize: 12, color: '#64748b' }}>Tổng thực lĩnh chi trả</Text>}
+                      value={summary.totalNet}
+                      formatter={v => fmtVND(Number(v))}
+                      valueStyle={{ fontSize: 18, fontWeight: 700, color: '#1677ff' }}
+                    />
+                  </Card>
+                </Col>
+              </Row>
 
-            {/* Excel-like Table */}
-            <Table
-              dataSource={filteredPayslips}
-              rowKey="id"
-              pagination={{ pageSize: 12, showTotal: t => `Tổng cộng ${t} dòng bảng tính` }}
-              scroll={{ x: 1950 }}
-              size="small"
-              bordered
-              className="excel-payroll-table"
-              locale={{ emptyText: 'Chưa có dữ liệu phiếu lương cho kỳ này.' }}
-              summary={() => filteredPayslips.length > 0 ? (
-                <Table.Summary.Row style={{
-                  background: '#f8fafc',
-                  fontWeight: 700,
-                  borderTop: '2px solid #0f172a',
-                  borderBottom: '3px double #0f172a',
-                }}>
-                  <Table.Summary.Cell index={0} colSpan={11} align="center">
-                    <Text strong style={{ color: '#0f172a', fontSize: 13, letterSpacing: 0.5 }}>
-                      TỔNG CỘNG ({filteredPayslips.length} NHÂN VIÊN)
-                    </Text>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={11} align="right">
-                    <Text strong style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtVND(summary.totalBase)}</Text>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={12} align="right">
-                    <Text strong style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtVND(summary.totalAllow)}</Text>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={13} align="right">
-                    <Text strong style={{ color: '#2563eb', fontVariantNumeric: 'tabular-nums' }}>{fmtVND(summary.totalOT)}</Text>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={14} align="right">
-                    <Text strong style={{ color: '#d97706', fontVariantNumeric: 'tabular-nums' }}>{fmtVND(summary.totalBonus)}</Text>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={15} align="right">
-                    <Text strong style={{ color: '#16a34a', fontSize: 14, fontVariantNumeric: 'tabular-nums' }}>{fmtVND(summary.totalGross)}</Text>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={16} align="right">
-                    <Text strong style={{ color: '#dc2626', fontVariantNumeric: 'tabular-nums' }}>{fmtVND(summary.totalInsurance)}</Text>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={17} align="right">
-                    <Text strong style={{ color: '#dc2626', fontVariantNumeric: 'tabular-nums' }}>{fmtVND(summary.totalTax)}</Text>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={18} align="right">
-                    <Text strong style={{ color: '#0284c7', fontSize: 15, fontVariantNumeric: 'tabular-nums' }}>{fmtVND(summary.totalNet)}</Text>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={19} />
-                </Table.Summary.Row>
-              ) : undefined}
-            >
-              {/* Nhóm 1: Nhân sự & Ngày công */}
-              <Table.ColumnGroup title={
-                <div style={{
-                  textAlign: 'center',
-                  background: '#f1f5f9',
-                  padding: '4px 0',
-                  color: '#334155',
-                  fontWeight: 700,
-                  fontSize: 12,
-                  letterSpacing: 0.3,
-                }}>
-                  1. THÔNG TIN NHÂN SỰ & NGÀY CÔNG (CHI TIẾT CHẤM CÔNG & NGHỈ PHÉP)
-                </div>
-              }>
-                <Table.Column
-                  title="STT"
-                  key="stt"
-                  width={50}
-                  align="center"
-                  render={(_: any, __: any, idx: number) => idx + 1}
-                />
-                <Table.Column
-                  title="Mã NV"
-                  key="empCode"
-                  width={90}
-                  align="center"
-                  render={(_: any, r: any) => <Tag color="blue">{r.employee?.employeeCode}</Tag>}
-                />
-                <Table.Column
-                  title="Họ và tên"
-                  key="empName"
-                  width={160}
-                  render={(_: any, r: any) => <Text strong style={{ color: '#0f172a' }}>{r.employee?.fullName}</Text>}
-                />
-                <Table.Column
-                  title="Phòng ban"
-                  key="dept"
-                  width={125}
-                  render={(_: any, r: any) => r.employee?.department?.name || '—'}
-                />
-                <Table.Column
-                  title="Chấm công"
-                  key="actualWork"
-                  width={80}
-                  align="center"
-                  render={(_: any, r: any) => (
-                    <span style={{ fontWeight: 600 }}>{r.actualWorkDays ?? r.workDays}</span>
-                  )}
-                />
-                <Table.Column
-                  title="Có phép"
-                  key="paidLeave"
-                  width={75}
-                  align="center"
-                  render={(_: any, r: any) => (
-                    r.paidLeaveDays > 0 ? <Tag color="blue">{r.paidLeaveDays}</Tag> : <Text type="secondary">0</Text>
-                  )}
-                />
-                <Table.Column
-                  title="Lễ tết"
-                  key="holiday"
-                  width={70}
-                  align="center"
-                  render={(_: any, r: any) => (
-                    r.holidayDays > 0 ? <Tag color="red">{r.holidayDays}</Tag> : <Text type="secondary">0</Text>
-                  )}
-                />
-                <Table.Column
-                  title="Chế độ"
-                  key="regime"
-                  width={75}
-                  align="center"
-                  render={(_: any, r: any) => (
-                    r.regimeLeaveDays > 0 ? <Tag color="purple">{r.regimeLeaveDays}</Tag> : <Text type="secondary">0</Text>
-                  )}
-                />
-                <Table.Column
-                  title="Không phép"
-                  key="unpaid"
-                  width={85}
-                  align="center"
-                  render={(_: any, r: any) => (
-                    r.unpaidLeaveDays > 0 ? <Tag color="error">{r.unpaidLeaveDays}</Tag> : <Text type="secondary">0</Text>
-                  )}
-                />
-                <Table.Column
-                  title="Phép còn lại"
-                  key="remainingLeave"
-                  width={90}
-                  align="center"
-                  render={(_: any, r: any) => (
-                    <Tag color="green" style={{ fontWeight: 600 }}>
-                      {r.remainingAnnualLeave ?? 12}/12
-                    </Tag>
-                  )}
-                />
-                <Table.Column
-                  title="Tổng công"
-                  key="wd"
-                  width={90}
-                  align="center"
-                  render={(_: any, r: any) => (
-                    <Tag color="cyan" style={{ fontWeight: 700 }}>
-                      {r.workDays}/{r.standardWorkDays || 22}
-                    </Tag>
-                  )}
-                />
-              </Table.ColumnGroup>
+              {/* Bảng lương tinh gọn, chỉ số chuẩn & đẹp */}
+              <Table
+                dataSource={filteredPayslips}
+                rowKey="id"
+                pagination={{ pageSize: 10, showTotal: t => `Tổng cộng ${t} nhân sự` }}
+                scroll={{ x: 1750 }}
+                size="small"
+                bordered
+                locale={{ emptyText: 'Không có nhân sự nào phù hợp với bộ lọc.' }}
+                columns={[
+                  {
+                    title: 'STT',
+                    key: 'stt',
+                    width: 50,
+                    align: 'center',
+                    render: (_: any, __: any, idx: number) => idx + 1,
+                  },
+                  {
+                    title: 'Mã NV',
+                    key: 'empCode',
+                    width: 90,
+                    align: 'center',
+                    render: (_: any, r: any) => <Tag color="blue">{r.employee?.employeeCode}</Tag>,
+                  },
+                  {
+                    title: 'Họ và tên',
+                    key: 'empName',
+                    width: 160,
+                    render: (_: any, r: any) => <Text strong style={{ color: '#0f172a' }}>{r.employee?.fullName}</Text>,
+                  },
+                  {
+                    title: 'Phòng ban',
+                    key: 'dept',
+                    width: 140,
+                    render: (_: any, r: any) => r.employee?.department?.name || '—',
+                  },
+                  {
+                    title: 'Chức danh',
+                    key: 'pos',
+                    width: 130,
+                    render: (_: any, r: any) => r.employee?.position?.name || '—',
+                  },
+                  {
+                    title: 'Thâm niên',
+                    key: 'seniority',
+                    width: 110,
+                    align: 'center',
+                    render: (_: any, r: any) => (
+                      <Tag color="purple">{formatSeniority(r.employee?.hireDate)}</Tag>
+                    ),
+                  },
+                  {
+                    title: 'Chỉ tiêu KPI',
+                    key: 'kpiTarget',
+                    width: 120,
+                    align: 'right',
+                    render: (_: any, r: any) => {
+                      const kpi = getSalesKpi(r);
+                      return kpi.target > 0 ? fmtVND(kpi.target) : '—';
+                    },
+                  },
+                  {
+                    title: 'Doanh số thực tế',
+                    key: 'salesActual',
+                    width: 130,
+                    align: 'right',
+                    render: (_: any, r: any) => {
+                      const kpi = getSalesKpi(r);
+                      return kpi.actual > 0 ? (
+                        <Text strong style={{ color: '#0284c7' }}>{fmtVND(kpi.actual)}</Text>
+                      ) : '0 ₫';
+                    },
+                  },
+                  {
+                    title: 'Đánh giá KPI',
+                    key: 'kpiStatus',
+                    width: 130,
+                    align: 'center',
+                    render: (_: any, r: any) => {
+                      const kpi = getSalesKpi(r);
+                      if (kpi.target === 0 && kpi.actual === 0) return <Text type="secondary">—</Text>;
+                      return kpi.isMet ? (
+                        <Tag color="success" style={{ fontWeight: 600 }}>Đạt ({kpi.percent}%)</Tag>
+                      ) : (
+                        <Tag color="error" style={{ fontWeight: 600 }}>Chưa đạt ({kpi.percent}%)</Tag>
+                      );
+                    },
+                  },
+                  {
+                    title: '% Hoa hồng',
+                    key: 'commRate',
+                    width: 95,
+                    align: 'center',
+                    render: (_: any, r: any) => {
+                      const kpi = getSalesKpi(r);
+                      return <Tag color="cyan">{kpi.rate}%</Tag>;
+                    },
+                  },
+                  {
+                    title: 'Tiền hoa hồng',
+                    key: 'commission',
+                    width: 130,
+                    align: 'right',
+                    render: (_: any, r: any) => {
+                      const kpi = getSalesKpi(r);
+                      return kpi.isMet && kpi.commission > 0 ? (
+                        <Text strong style={{ color: '#16a34a' }}>+{fmtVND(kpi.commission)}</Text>
+                      ) : (
+                        <span style={{ color: '#94a3b8' }}>0 ₫</span>
+                      );
+                    },
+                  },
+                  {
+                    title: 'Lương theo công',
+                    dataIndex: 'baseIncome',
+                    key: 'base',
+                    width: 125,
+                    align: 'right',
+                    render: fmtVND,
+                  },
+                  {
+                    title: 'Phụ cấp',
+                    dataIndex: 'allowanceTotal',
+                    key: 'allow',
+                    width: 105,
+                    align: 'right',
+                    render: fmtVND,
+                  },
+                  {
+                    title: 'Giảm trừ',
+                    key: 'deduct',
+                    width: 110,
+                    align: 'right',
+                    render: (_: any, r: any) => {
+                      const deduct = (r.insuranceEmployee || 0) + (r.personalIncomeTax || 0) + (r.otherDeduction || 0);
+                      return deduct > 0 ? <span style={{ color: '#dc2626' }}>-{fmtVND(deduct)}</span> : '0 ₫';
+                    },
+                  },
+                  {
+                    title: 'Thực lĩnh',
+                    dataIndex: 'netPay',
+                    key: 'net',
+                    width: 140,
+                    align: 'right',
+                    render: (v: number) => <Text strong style={{ color: '#1677ff', fontSize: 14 }}>{fmtVND(v)}</Text>,
+                  },
+                  {
+                    title: 'Thao tác',
+                    key: 'action',
+                    width: 90,
+                    align: 'center',
+                    render: (_: any, r: any) => (
+                      <Space size={4}>
+                        <Tooltip title="Cấu hình KPI & Hoa hồng">
+                          <Button
+                            size="small"
+                            type="text"
+                            icon={<EditOutlined style={{ color: '#1677ff' }} />}
+                            onClick={() => setSalesKpiModal({ open: true, payslip: r })}
+                          />
+                        </Tooltip>
+                        <Tooltip title="Xem và in phiếu lương cá nhân">
+                          <Button
+                            size="small"
+                            type="text"
+                            icon={<PrinterOutlined style={{ color: '#52c41a' }} />}
+                            onClick={() => setSelectedPayslip(r)}
+                          />
+                        </Tooltip>
+                      </Space>
+                    ),
+                  },
+                ]}
+              />
+            </>
+          )}
 
-              {/* Nhóm 2: Thu nhập */}
-              <Table.ColumnGroup title={
-                <div style={{
-                  textAlign: 'center',
-                  background: '#f0fdf4',
-                  padding: '4px 0',
-                  color: '#166534',
-                  fontWeight: 700,
-                  fontSize: 12,
-                  letterSpacing: 0.3,
-                }}>
-                  2. CÁC KHOẢN THU NHẬP
-                </div>
-              }>
-                <Table.Column
-                  title="Lương theo công"
-                  dataIndex="baseIncome"
-                  key="base"
-                  width={125}
-                  align="right"
-                  render={fmtVND}
-                />
-                <Table.Column
-                  title="Phụ cấp"
-                  dataIndex="allowanceTotal"
-                  key="allow"
-                  width={105}
-                  align="right"
-                  render={fmtVND}
-                />
-                <Table.Column
-                  title="Làm thêm giờ"
-                  dataIndex="otAmount"
-                  key="ot"
-                  width={110}
-                  align="right"
-                  render={fmtVND}
-                />
-                <Table.Column
-                  title="Thưởng (nếu có)"
-                  dataIndex="bonus"
-                  key="bonus"
-                  width={115}
-                  align="right"
-                  render={(v: number) => (
-                    v > 0 ? (
-                      <Text strong style={{ color: '#d97706', fontVariantNumeric: 'tabular-nums' }}>
-                        {fmtVND(v)}
-                      </Text>
-                    ) : (
-                      <span style={{ color: '#94a3b8' }}>0 ₫</span>
-                    )
-                  )}
-                />
-                <Table.Column
-                  title="Tổng thu nhập"
-                  dataIndex="grossIncome"
-                  key="gross"
-                  width={140}
-                  align="right"
-                  render={(v: number) => (
-                    <Text strong style={{ color: '#16a34a', fontVariantNumeric: 'tabular-nums' }}>
-                      {fmtVND(v)}
-                    </Text>
-                  )}
-                />
-              </Table.ColumnGroup>
+          {/* Individual Payslip Modal */}
+          <IndividualPayslipModal
+            open={!!selectedPayslip}
+            onClose={() => setSelectedPayslip(null)}
+            payslip={selectedPayslip}
+          />
 
-              {/* Nhóm 3: Khấu trừ */}
-              <Table.ColumnGroup title={
-                <div style={{
-                  textAlign: 'center',
-                  background: '#fef2f2',
-                  padding: '4px 0',
-                  color: '#991b1b',
-                  fontWeight: 700,
-                  fontSize: 12,
-                  letterSpacing: 0.3,
-                }}>
-                  3. CÁC KHOẢN GIẢM TRỪ VÀ THUẾ
-                </div>
-              }>
-                <Table.Column
-                  title="BHXH (10.5%)"
-                  dataIndex="insuranceEmployee"
-                  key="ins"
-                  width={115}
-                  align="right"
-                  render={fmtVND}
-                />
-                <Table.Column
-                  title="Thuế TNCN"
-                  dataIndex="personalIncomeTax"
-                  key="tax"
-                  width={110}
-                  align="right"
-                  render={fmtVND}
-                />
-              </Table.ColumnGroup>
-
-              {/* Nhóm 4: Thực lĩnh */}
-              <Table.ColumnGroup title={
-                <div style={{
-                  textAlign: 'center',
-                  background: '#eff6ff',
-                  padding: '4px 0',
-                  color: '#1e40af',
-                  fontWeight: 700,
-                  fontSize: 12,
-                  letterSpacing: 0.3,
-                }}>
-                  4. TIỀN THỰC LĨNH CHI TRẢ
-                </div>
-              }>
-                <Table.Column
-                  title="Tiền thực lĩnh"
-                  dataIndex="netPay"
-                  key="net"
-                  width={145}
-                  align="right"
-                  render={(v: number) => (
-                    <Text strong style={{ color: '#0284c7', fontSize: 14, fontVariantNumeric: 'tabular-nums' }}>
-                      {fmtVND(v)}
-                    </Text>
-                  )}
-                />
-                <Table.Column
-                  title="Chi tiết"
-                  key="action"
-                  width={65}
-                  align="center"
-                  render={(_: any, r: any) => (
-                    <Tooltip title="Xem chi tiết phiếu lương cá nhân">
-                      <Button
-                        type="text"
-                        size="small"
-                        icon={<EyeOutlined style={{ color: '#1677ff' }} />}
-                        onClick={() => setSelectedPayslip(r)}
-                      />
-                    </Tooltip>
-                  )}
-                />
-              </Table.ColumnGroup>
-            </Table>
-
-            {/* Individual Payslip Modal */}
-            <IndividualPayslipModal
-              open={!!selectedPayslip}
-              onClose={() => setSelectedPayslip(null)}
-              payslip={selectedPayslip}
-            />
-          </>
-        )}
-      </div>
+          {/* Sales KPI Config Modal */}
+          <SalesKpiConfigModal
+            open={salesKpiModal.open}
+            onClose={() => setSalesKpiModal({ open: false, payslip: null })}
+            payslip={salesKpiModal.payslip}
+            onSaved={handleUpdatePayslip}
+          />
+        </>
+      )}
     </Modal>
   );
 };
 
-// ─────────────────────── COMPUTE PREVIEW MODAL (GROUPED COLUMNS) ───────────────
+// ─────────────────────── COMPUTE PREVIEW MODAL (THEO PHÒNG BAN & CƠ SỐ) ───────────────
 const ComputePreviewModal = ({
   open, onClose, period, onConfirmComputed,
 }: { open: boolean; onClose: () => void; period: any; onConfirmComputed: () => void }) => {
+  const [departments, setDepartments] = useState<any[]>([]);
+  const [selectedDeptId, setSelectedDeptId] = useState<string>('');
   const [rows, setRows]         = useState<any[]>([]);
   const [loading, setLoading]   = useState(false);
+  const [deptLoading, setDeptLoading] = useState(false);
   const [computing, setComputing] = useState(false);
   const [summary, setSummary]   = useState({ totalGross: 0, totalNet: 0, totalTax: 0, totalInsurance: 0, noProfile: 0 });
 
+  // Sales parameters (Cơ số tính lương Sales)
+  const [salesKpiTarget, setSalesKpiTarget] = useState<number>(100000000);
+  const [salesCommissionRate, setSalesCommissionRate] = useState<number>(5);
+
+  // Load departments on modal open
   useEffect(() => {
-    if (!open || !period) return;
+    if (!open) {
+      setSelectedDeptId('');
+      setRows([]);
+      return;
+    }
+    setDeptLoading(true);
+    apiClient.get('/organization/departments')
+      .then(({ data }) => {
+        const list = Array.isArray(data) ? data : [];
+        setDepartments(list);
+      })
+      .catch(() => message.error('Lỗi khi tải danh sách phòng ban'))
+      .finally(() => setDeptLoading(false));
+  }, [open]);
+
+  // Selected department info
+  const selectedDept = useMemo(() => {
+    return departments.find(d => d.id === selectedDeptId);
+  }, [departments, selectedDeptId]);
+
+  const isSalesDept = useMemo(() => {
+    if (!selectedDept) return false;
+    const code = (selectedDept.code || '').toUpperCase();
+    const name = (selectedDept.name || '').toLowerCase();
+    return (
+      code.includes('SALES') ||
+      code === 'BIZ' ||
+      code === 'MKT' ||
+      name.includes('kinh doanh') ||
+      name.includes('sales') ||
+      name.includes('bán hàng') ||
+      name.includes('marketing')
+    );
+  }, [selectedDept]);
+
+  // Fetch preview when selected department changes
+  useEffect(() => {
+    if (!open || !period || !selectedDeptId) {
+      setRows([]);
+      setSummary({ totalGross: 0, totalNet: 0, totalTax: 0, totalInsurance: 0, noProfile: 0 });
+      return;
+    }
+
     setLoading(true);
-    apiClient.get(`/payroll/periods/${period.id}/preview`)
+    apiClient.get(`/payroll/periods/${period.id}/preview?departmentId=${selectedDeptId}`)
       .then(({ data }) => {
         const r = data.rows || [];
         setRows(r);
@@ -831,14 +1223,23 @@ const ComputePreviewModal = ({
       })
       .catch(() => message.error('Lỗi khi tải dữ liệu xem trước'))
       .finally(() => setLoading(false));
-  }, [open, period]);
+  }, [open, period, selectedDeptId]);
 
   const handleConfirm = async () => {
+    if (!selectedDeptId) {
+      message.warning('Vui lòng chọn phòng ban cần tính lương!');
+      return;
+    }
     try {
       setComputing(true);
-      const { data } = await apiClient.post(`/payroll/periods/${period.id}/compute`);
+      const payload: any = { departmentId: selectedDeptId };
+      if (isSalesDept) {
+        payload.kpiTarget = salesKpiTarget;
+        payload.commissionRate = salesCommissionRate;
+      }
+      const { data } = await apiClient.post(`/payroll/periods/${period.id}/compute`, payload);
       message.success(
-        `✅ Đã tính lương ${data.count} nhân viên thành công!` +
+        `Đã tính lương cho phòng ban "${selectedDept?.name}" (${data.count} nhân viên)!` +
         (data.skipped?.length ? ` Bỏ qua ${data.skipped.length} NV chưa có hồ sơ lương.` : '')
       );
       onClose();
@@ -857,14 +1258,19 @@ const ComputePreviewModal = ({
       title={
         <Space>
           <CalculatorOutlined style={{ color: '#1677ff' }} />
-          <span>Dự toán & Tính lương tự động — Tháng {period?.month}/{period?.year}</span>
-          <Badge count={`${validCount} NV đủ điều kiện`} style={{ background: '#52c41a' }} />
+          <span>Tính lương theo phòng ban — Tháng {period?.month}/{period?.year}</span>
+          {selectedDeptId && (
+            <Tag color={isSalesDept ? 'cyan' : 'blue'}>
+              {selectedDept?.name} ({validCount} NV)
+            </Tag>
+          )}
         </Space>
       }
       open={open}
       onCancel={onClose}
-      width={1400}
+      width={1380}
       style={{ top: 16 }}
+      destroyOnHidden
       footer={
         <Space style={{ width: '100%', justifyContent: 'space-between' }}>
           <Text type="secondary">
@@ -875,40 +1281,173 @@ const ComputePreviewModal = ({
             )}
           </Text>
           <Space>
-            <Button onClick={onClose}>Hủy bỏ</Button>
+            <Button onClick={onClose}>Đóng</Button>
             <Button
               type="primary"
               icon={<CalculatorOutlined />}
               loading={computing}
-              disabled={validCount === 0}
+              disabled={!selectedDeptId || validCount === 0}
               onClick={handleConfirm}
-              size="large"
+              size="middle"
             >
-              Xác nhận tính lương ({validCount} nhân viên)
+              Xác nhận tính lương ({validCount} nhân sự)
             </Button>
           </Space>
         </Space>
       }
     >
-      {loading ? (
-        <div style={{ textAlign: 'center', padding: '60px 0' }}>
+      {/* ── BƯỚC 1: CHỌN PHÒNG BAN & ÁP CƠ SỐ TÍNH LƯƠNG ── */}
+      <div style={{
+        background: '#fafafa',
+        border: '1px solid #f0f0f0',
+        borderRadius: 6,
+        padding: '12px 16px',
+        marginBottom: 16,
+      }}>
+        <Row gutter={16} align="middle">
+          <Col span={10}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b', marginBottom: 6 }}>
+              1. Chọn phòng ban cần tính lương:
+            </div>
+            <Select
+              style={{ width: '100%' }}
+              value={selectedDeptId || undefined}
+              onChange={val => setSelectedDeptId(val)}
+              placeholder="-- Chọn phòng ban để áp dụng cơ số --"
+              loading={deptLoading}
+              allowClear
+            >
+              {departments.map((dept: any) => (
+                <Option key={dept.id} value={dept.id}>
+                  {dept.name} ({dept.code})
+                </Option>
+              ))}
+            </Select>
+          </Col>
+          <Col span={14}>
+            {selectedDeptId ? (
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b', marginBottom: 6 }}>
+                  2. Cơ số tính lương: {isSalesDept ? (
+                    <Tag color="cyan">Khối Kinh doanh (Sales)</Tag>
+                  ) : (
+                    <Tag color="blue">Khối Kỹ thuật & Văn phòng</Tag>
+                  )}
+                </div>
+                {isSalesDept ? (
+                  <div>
+                    <Space size={12} wrap align="center">
+                      <Space size={4}>
+                        <Text style={{ fontSize: 12, color: '#64748b' }}>Chỉ tiêu KPI:</Text>
+                        <InputNumber
+                          size="small"
+                          style={{ width: 140 }}
+                          value={salesKpiTarget}
+                          min={0}
+                          step={10000000}
+                          formatter={v => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                          parser={v => (v ? v.replace(/,*/g, '') : '') as any}
+                          onChange={v => setSalesKpiTarget(Number(v) || 0)}
+                        />
+                      </Space>
+                      <Space size={4}>
+                        <Text style={{ fontSize: 12, color: '#64748b' }}>% Hoa hồng:</Text>
+                        <InputNumber
+                          size="small"
+                          style={{ width: 80 }}
+                          value={salesCommissionRate}
+                          min={0}
+                          max={100}
+                          step={0.5}
+                          suffix="%"
+                          onChange={v => setSalesCommissionRate(Number(v) || 0)}
+                        />
+                      </Space>
+                      <Space size={4}>
+                        {[3, 5, 8, 10].map(r => (
+                          <Button
+                            key={r}
+                            size="small"
+                            type={salesCommissionRate === r ? 'primary' : 'dashed'}
+                            onClick={() => setSalesCommissionRate(r)}
+                          >
+                            {r}%
+                          </Button>
+                        ))}
+                      </Space>
+                    </Space>
+                    <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>
+                      Đủ KPI: nhận đủ lương cơ bản + hoa hồng. Chưa đủ KPI: chỉ nhận lương cơ bản theo ngày công.
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 12, color: '#475569', lineHeight: 1.6 }}>
+                    ● Công chuẩn: <b>22 ngày công</b> | OT: <b>1.5x / 2.0x / 3.0x</b><br />
+                    ● BHXH NLĐ: <b>10.5%</b> (DN: 21.5%) | Giảm trừ thuế: <b>11M</b> (bản thân), <b>4.4M</b> (phụ thuộc)
+                  </div>
+                )}
+              </div>
+            ) : (
+              <Text type="secondary" style={{ fontSize: 13 }}>
+                Vui lòng chọn phòng ban ở bên trái để tải danh sách nhân sự và xem trước số liệu.
+              </Text>
+            )}
+          </Col>
+        </Row>
+      </div>
+
+      {/* ── BƯỚC 2: NỘI DUNG XEM TRƯỚC BẢNG LƯƠNG ── */}
+      {!selectedDeptId ? (
+        <div style={{ padding: '60px 0', textAlign: 'center' }}>
+          <BankOutlined style={{ fontSize: 44, color: '#94a3b8', marginBottom: 12 }} />
+          <Title level={5} style={{ color: '#334155', margin: 0 }}>
+            Vui lòng chọn một phòng ban để bắt đầu tính lương
+          </Title>
+          <Paragraph type="secondary" style={{ fontSize: 13, maxWidth: 520, margin: '6px auto 0' }}>
+            Hệ thống phân tách luồng tính lương: Khối Sales tính theo KPI & hoa hồng chiết khấu, Khối Kỹ thuật / Văn phòng tính theo ngày công chuẩn và làm thêm giờ.
+          </Paragraph>
+        </div>
+      ) : loading ? (
+        <div style={{ textAlign: 'center', padding: '50px 0' }}>
           <Spin size="large" />
-          <div style={{ marginTop: 16 }}>
-            <Text type="secondary">Đang phân tích bảng chấm công & hồ sơ lương nhân viên...</Text>
+          <div style={{ marginTop: 14 }}>
+            <Text type="secondary">Đang tải danh sách nhân sự phòng {selectedDept?.name}...</Text>
           </div>
+        </div>
+      ) : rows.length === 0 ? (
+        <div style={{ padding: '48px 0', textAlign: 'center' }}>
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description={
+              <div>
+                <Text strong style={{ fontSize: 15, color: '#334155' }}>
+                  Phòng ban này hiện chưa có nhân viên nào
+                </Text>
+                <div style={{ fontSize: 13, color: '#64748b', marginTop: 4 }}>
+                  Phòng mới tạo hoặc chưa có nhân sự hoạt động trong hệ thống.
+                </div>
+              </div>
+            }
+          />
         </div>
       ) : (
         <>
-          <Row gutter={16} style={{ marginBottom: 16 }}>
+          {/* Thống kê 4 chỉ số tóm tắt */}
+          <Row gutter={12} style={{ marginBottom: 14 }}>
             {[
-              { title: 'Tổng thu nhập ước tính', val: summary.totalGross, color: '#52c41a', bg: '#f6ffed', border: '#b7eb8f' },
-              { title: 'Tổng bảo hiểm NLĐ',       val: summary.totalInsurance, color: '#fa8c16', bg: '#fff7e6', border: '#ffd591' },
-              { title: 'Tổng thuế TNCN',           val: summary.totalTax,   color: '#eb2f96', bg: '#fff0f6', border: '#ffadd2' },
-              { title: 'Tổng tiền thực lĩnh chi trả', val: summary.totalNet, color: '#1677ff', bg: '#e6f4ff', border: '#91caff' },
-            ].map(({ title, val, color, bg, border }) => (
+              { title: 'Tổng thu nhập ước tính', val: summary.totalGross, color: '#16a34a' },
+              { title: 'Tổng bảo hiểm NLĐ (10.5%)', val: summary.totalInsurance, color: '#d97706' },
+              { title: 'Tổng thuế TNCN', val: summary.totalTax, color: '#dc2626' },
+              { title: 'Tổng thực lĩnh chi trả', val: summary.totalNet, color: '#1677ff' },
+            ].map(({ title, val, color }) => (
               <Col span={6} key={title}>
-                <Card size="small" style={{ background: bg, border: `1px solid ${border}`, borderRadius: 8 }}>
-                  <Statistic title={title} value={val} formatter={v => fmtVND(Number(v))} valueStyle={{ color, fontSize: 16, fontWeight: 700 }} />
+                <Card size="small" style={{ borderRadius: 6, borderColor: '#f0f0f0' }}>
+                  <Statistic
+                    title={<Text style={{ fontSize: 12, color: '#64748b' }}>{title}</Text>}
+                    value={val}
+                    formatter={v => fmtVND(Number(v))}
+                    valueStyle={{ color, fontSize: 16, fontWeight: 700 }}
+                  />
                 </Card>
               </Col>
             ))}
@@ -919,109 +1458,105 @@ const ComputePreviewModal = ({
               type="warning"
               showIcon
               icon={<WarningOutlined />}
-              message={`${summary.noProfile} nhân viên chưa thiết lập mức lương cơ bản trong hợp đồng — sẽ bị bỏ qua khi tính tự động.`}
+              message={`${summary.noProfile} nhân viên chưa thiết lập hồ sơ lương — sẽ bị bỏ qua khi tính tự động.`}
               style={{ marginBottom: 12, borderRadius: 6 }}
             />
           )}
 
+          {/* Bảng xem trước */}
           <Table
             dataSource={rows}
             rowKey="employeeId"
-            pagination={{ pageSize: 12, showSizeChanger: false }}
-            scroll={{ x: 1450 }}
+            pagination={{ pageSize: 8, showTotal: t => `Tổng cộng ${t} nhân sự` }}
+            scroll={{ x: 1350 }}
             size="small"
             bordered
           >
-            <Table.ColumnGroup title={<div style={{ textAlign: 'center', color: '#1e3a8a', fontWeight: 700 }}>1. NHÂN SỰ & CÔNG</div>}>
-              <Table.Column title="STT" key="idx" width={50} align="center" render={(_: any, __: any, idx: number) => idx + 1} />
+            <Table.Column title="STT" key="idx" width={50} align="center" render={(_: any, __: any, idx: number) => idx + 1} />
+            <Table.Column
+              title="Nhân viên"
+              key="emp"
+              width={180}
+              render={(_: any, r: any) => (
+                <Space>
+                  {!r.hasSalaryProfile && <Tooltip title="Chưa có hồ sơ lương"><WarningOutlined style={{ color: '#ff4d4f' }} /></Tooltip>}
+                  <div>
+                    <Text strong style={{ color: r.hasSalaryProfile ? 'inherit' : '#ff4d4f' }}>{r.fullName}</Text><br />
+                    <Text type="secondary" style={{ fontSize: 12 }}>{r.employeeCode}</Text>
+                  </div>
+                </Space>
+              )}
+            />
+            <Table.Column title="Phòng ban" dataIndex="department" key="dept" width={130} />
+            <Table.Column title="Chức vụ" dataIndex="position" key="pos" width={130} />
+            <Table.Column
+              title="Ngày công"
+              key="wd"
+              width={90}
+              align="center"
+              render={(_: any, r: any) => r.hasSalaryProfile ? `${r.workDays}/22` : '—'}
+            />
+            <Table.Column
+              title="Lương cơ bản"
+              dataIndex="baseSalary"
+              key="base"
+              width={125}
+              align="right"
+              render={(v: number, r: any) => r.hasSalaryProfile ? fmtVND(v) : <Tag color="red">Chưa có</Tag>}
+            />
+            <Table.Column
+              title="Phụ cấp"
+              dataIndex="allowanceTotal"
+              key="allow"
+              width={105}
+              align="right"
+              render={(v: number, r: any) => r.hasSalaryProfile ? fmtVND(v) : '—'}
+            />
+            <Table.Column
+              title="Làm thêm giờ"
+              dataIndex="otAmount"
+              key="ot"
+              width={105}
+              align="right"
+              render={(v: number, r: any) => r.hasSalaryProfile ? fmtVND(v) : '—'}
+            />
+            {isSalesDept && (
               <Table.Column
-                title="Nhân viên"
-                key="emp"
-                width={190}
-                render={(_: any, r: any) => (
-                  <Space>
-                    {!r.hasSalaryProfile && <Tooltip title="Chưa có hồ sơ lương"><WarningOutlined style={{ color: '#ff4d4f' }} /></Tooltip>}
-                    <div>
-                      <Text strong style={{ color: r.hasSalaryProfile ? 'inherit' : '#ff4d4f' }}>{r.fullName}</Text><br />
-                      <Text type="secondary" style={{ fontSize: 12 }}>{r.employeeCode}</Text>
-                    </div>
-                  </Space>
-                )}
-              />
-              <Table.Column title="Phòng ban" dataIndex="department" key="dept" width={130} />
-              <Table.Column
-                title="Ngày công"
-                key="wd"
-                width={90}
-                align="center"
-                render={(_: any, r: any) => r.hasSalaryProfile ? `${r.workDays}/22` : '—'}
-              />
-            </Table.ColumnGroup>
-
-            <Table.ColumnGroup title={<div style={{ textAlign: 'center', color: '#15803d', fontWeight: 700 }}>2. CÁC KHOẢN THU NHẬP DỰ TÍNH</div>}>
-              <Table.Column
-                title="Lương cơ bản"
-                dataIndex="baseSalary"
-                key="base"
-                width={130}
+                title="Hoa hồng dự kiến"
+                dataIndex="bonus"
+                key="bonus"
+                width={125}
                 align="right"
-                render={(v: number, r: any) => r.hasSalaryProfile ? fmtVND(v) : <Tag color="red">Chưa có</Tag>}
+                render={(v: number, r: any) => r.hasSalaryProfile ? <Text strong style={{ color: '#16a34a' }}>+{fmtVND(v)}</Text> : '—'}
               />
-              <Table.Column
-                title="Phụ cấp"
-                dataIndex="allowanceTotal"
-                key="allow"
-                width={110}
-                align="right"
-                render={(v: number, r: any) => r.hasSalaryProfile ? fmtVND(v) : '—'}
-              />
-              <Table.Column
-                title="Làm thêm giờ"
-                dataIndex="otAmount"
-                key="ot"
-                width={110}
-                align="right"
-                render={(v: number, r: any) => r.hasSalaryProfile ? fmtVND(v) : '—'}
-              />
-              <Table.Column
-                title="Tổng thu nhập"
-                dataIndex="grossIncome"
-                key="gross"
-                width={140}
-                align="right"
-                render={(v: number, r: any) => r.hasSalaryProfile ? <Text strong style={{ color: '#52c41a' }}>{fmtVND(v)}</Text> : '—'}
-              />
-            </Table.ColumnGroup>
-
-            <Table.ColumnGroup title={<div style={{ textAlign: 'center', color: '#b91c1c', fontWeight: 700 }}>3. KHẤU TRỪ DỰ TÍNH</div>}>
-              <Table.Column
-                title="BH (10.5%)"
-                dataIndex="insuranceEmployee"
-                key="ins"
-                width={120}
-                align="right"
-                render={(v: number, r: any) => r.hasSalaryProfile ? fmtVND(v) : '—'}
-              />
-              <Table.Column
-                title="Thuế TNCN"
-                dataIndex="personalIncomeTax"
-                key="tax"
-                width={110}
-                align="right"
-                render={(v: number, r: any) => r.hasSalaryProfile ? fmtVND(v) : '—'}
-              />
-            </Table.ColumnGroup>
-
-            <Table.ColumnGroup title={<div style={{ textAlign: 'center', color: '#1d4ed8', fontWeight: 700 }}>4. TIỀN THỰC LĨNH</div>}>
-              <Table.Column
-                title="Tiền thực lĩnh"
-                dataIndex="netPay"
-                key="net"
-                width={140}
-                align="right"
-                render={(v: number, r: any) => r.hasSalaryProfile ? <Text strong style={{ color: '#1677ff', fontSize: 14 }}>{fmtVND(v)}</Text> : '—'}
-              />
-            </Table.ColumnGroup>
+            )}
+            <Table.Column
+              title="Tổng thu nhập"
+              dataIndex="grossIncome"
+              key="gross"
+              width={130}
+              align="right"
+              render={(v: number, r: any) => r.hasSalaryProfile ? <Text strong style={{ color: '#16a34a' }}>{fmtVND(v)}</Text> : '—'}
+            />
+            <Table.Column
+              title="Giảm trừ (BH+Thuế)"
+              key="deduct"
+              width={130}
+              align="right"
+              render={(_: any, r: any) => {
+                if (!r.hasSalaryProfile) return '—';
+                const d = (r.insuranceEmployee || 0) + (r.personalIncomeTax || 0);
+                return d > 0 ? <span style={{ color: '#dc2626' }}>-{fmtVND(d)}</span> : '0 ₫';
+              }}
+            />
+            <Table.Column
+              title="Thực lĩnh"
+              dataIndex="netPay"
+              key="net"
+              width={135}
+              align="right"
+              render={(v: number, r: any) => r.hasSalaryProfile ? <Text strong style={{ color: '#1677ff', fontSize: 13 }}>{fmtVND(v)}</Text> : '—'}
+            />
           </Table>
         </>
       )}
@@ -1342,6 +1877,17 @@ const PayrollPeriodsPage = () => {
     }
   };
 
+  // ── DELETE DRAFT PERIOD ──
+  const handleDeletePeriod = async (periodId: string) => {
+    try {
+      await apiClient.delete(`/payroll/periods/${periodId}`);
+      message.success('Đã xóa kỳ lương thành công!');
+      fetchData();
+    } catch (err: any) {
+      message.error(err?.response?.data?.message || 'Không thể xóa kỳ lương');
+    }
+  };
+
   // ── SALARY REVIEW ──
   const handleOpenSalaryReview = () => {
     setSalaryReviewOpen(true);
@@ -1476,7 +2022,7 @@ const PayrollPeriodsPage = () => {
     {
       title: 'Hành động',
       key: 'action',
-      width: canViewCompanyPayroll ? 190 : 80,
+      width: canViewCompanyPayroll ? 220 : 80,
       align: 'center' as const,
       fixed: 'right' as const,
       render: (_: any, r: any) => {
@@ -1516,7 +2062,7 @@ const PayrollPeriodsPage = () => {
             </Tooltip>
 
             {/* 2. Tính lương */}
-            <Tooltip title={!canCompute ? 'Chỉ Kế toán / Quản trị viên mới có quyền tính lương' : isPaid ? 'Kỳ lương đã khóa (Đã chi trả)' : 'Tính toán lương tự động'}>
+            <Tooltip title={!canCompute ? 'Chỉ Kế toán / Quản trị viên mới có quyền tính lương' : isPaid ? 'Kỳ lương đã khóa (Đã chi trả)' : 'Tính toán lương theo phòng ban'}>
               <span>
                 <Button
                   type="text"
@@ -1589,6 +2135,29 @@ const PayrollPeriodsPage = () => {
                 onClick={() => handleOpenMyPayslip(r)}
               />
             </Tooltip>
+
+            {/* 6. Xóa kỳ lương (chỉ áp dụng cho bản nháp) */}
+            {canCreate && isDraft && (
+              <Tooltip title="Xóa kỳ lương (chỉ áp dụng cho bản nháp)">
+                <span>
+                  <Popconfirm
+                    title="Xác nhận xóa kỳ lương này?"
+                    description="Toàn bộ phiếu lương thuộc kỳ lương này sẽ bị xóa. Bạn có thể tạo lại sau."
+                    onConfirm={() => handleDeletePeriod(r.id)}
+                    okText="Xóa kỳ lương"
+                    cancelText="Hủy"
+                    okButtonProps={{ danger: true }}
+                  >
+                    <Button
+                      type="text"
+                      danger
+                      size="small"
+                      icon={<DeleteOutlined />}
+                    />
+                  </Popconfirm>
+                </span>
+              </Tooltip>
+            )}
           </Space>
         );
       },

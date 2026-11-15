@@ -27,6 +27,7 @@ const AuditLogPage = lazy(() => import('../features/admin/pages/AuditLogPage'));
 const ChangePasswordPage = lazy(() => import('../features/auth/pages/ChangePasswordPage'));
 const MyPayslipsPage = lazy(() => import('../features/payroll/pages/MyPayslipsPage'));
 const PayrollPeriodsPage = lazy(() => import('../features/payroll/pages/PayrollPeriodsPage'));
+const EmployeeKpiPage = lazy(() => import('../features/kpi/pages/EmployeeKpiPage'));
 
 // Protected route wrapper
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -113,6 +114,8 @@ const AppRouter: React.FC = () => {
           {/* Payroll */}
           <Route path="/payroll" element={<Navigate to="/payroll/periods" replace />} />
           <Route path="/payroll/periods" element={<PayrollPeriodsPage />} />
+          <Route path="/payroll/kpi" element={<EmployeeKpiPage />} />
+          <Route path="/kpi" element={<Navigate to="/payroll/kpi" replace />} />
           <Route path="/payroll/my-payslips" element={<MyPayslipsPage />} />
 
           {/* Admin */}
